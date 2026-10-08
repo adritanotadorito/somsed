@@ -93,6 +93,18 @@
           </div>
           <span id="debug-winner-badge" class="debug-badge">No Attempts</span>
         </div>
+        <div class="debug-actions">
+          <button id="debug-copy-btn" type="button" class="btn btn-secondary btn-sm" title="Copy raw stroke points as JSON">
+            📋 Copy Stroke JSON
+          </button>
+          <button id="debug-replay-toggle-btn" type="button" class="btn btn-secondary btn-sm" title="Replay stroke from JSON">
+            ▶️ Replay Stroke
+          </button>
+        </div>
+        <div id="debug-replay-box" class="debug-replay-box hidden">
+          <textarea id="debug-replay-input" rows="3" placeholder='Paste stroke JSON array here, e.g. [{"x": -3, "y": 2}, ...]'></textarea>
+          <button id="debug-run-replay-btn" type="button" class="btn btn-secondary btn-sm">Run Recognition</button>
+        </div>
         <div class="debug-body" id="debug-content">
           <p class="debug-placeholder">Draw and hold a stroke on the canvas to inspect candidate scores, structural checks, orientation, and corner detection.</p>
         </div>

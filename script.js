@@ -78,6 +78,11 @@ const debugToggleBtn = document.getElementById('debug-toggle-btn');
 const debugPanel = document.getElementById('debug-panel');
 const debugWinnerBadge = document.getElementById('debug-winner-badge');
 const debugContent = document.getElementById('debug-content');
+const debugCopyBtn = document.getElementById('debug-copy-btn');
+const debugReplayToggleBtn = document.getElementById('debug-replay-toggle-btn');
+const debugReplayBox = document.getElementById('debug-replay-box');
+const debugReplayInput = document.getElementById('debug-replay-input');
+const debugRunReplayBtn = document.getElementById('debug-run-replay-btn');
 
 // ==========================================
 // 4. COORDINATE CONVERSION FUNCTIONS
@@ -354,6 +359,26 @@ function drawShapeHandles(ctx, shape) {
     ctx.arc(p2.x, p2.y, 5, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+  } else if (type === 'triangle' && geometry.center && geometry.vertices) {
+    const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
+
+    // Center handle
+    ctx.fillStyle = STYLES.centerDotColor;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Resize/rotate handle at vertex 0
+    if (geometry.vertices.length > 0) {
+      const v0 = graphToCanvas(geometry.vertices[0].x, geometry.vertices[0].y, displayWidth, displayHeight);
+      ctx.fillStyle = STYLES.handleColor;
+      ctx.beginPath();
+      ctx.arc(v0.x, v0.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   } else if (geometry.center) {
     const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
 
@@ -475,10 +500,14 @@ function triggerHoldSnap() {
 
   if (recognized) {
     rawStrokeBackup = [...currentStroke];
+    const initialDragGraph = canvasToGraph(holdAnchor.x, holdAnchor.y, displayWidth, displayHeight);
     snappedShape = {
       id: shapeIdCounter++,
       type: recognized.type,
       geometry: recognized.geometry,
+      baseGeometry: JSON.parse(JSON.stringify(recognized.geometry)),
+      initialDragGraph,
+      initialDragCanvas: { x: holdAnchor.x, y: holdAnchor.y },
       rawPoints: rawStrokeBackup
     };
 
@@ -669,48 +698,95 @@ function handlePointerMove(event) {
 }
 
 function adjustLiveShapeGeometry(shape, canvasX, canvasY) {
-  const { type, geometry } = shape;
+  const { type } = shape;
   const currentGraph = canvasToGraph(canvasX, canvasY, displayWidth, displayHeight);
+  const baseGeom = shape.baseGeometry || shape.geometry;
 
   if (type === 'line') {
-    geometry.p2 = currentGraph;
-  } else if (geometry.center) {
-    const centerCanvas = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
+    shape.geometry.p2 = currentGraph;
+  } else if (type === 'triangle' && baseGeom.center && baseGeom.vertices) {
+    const baseCenter = baseGeom.center;
+    const baseVertices = baseGeom.vertices;
+    const anchorGraph = shape.initialDragGraph || baseVertices[0];
+
+    let d0x = anchorGraph.x - baseCenter.x;
+    let d0y = anchorGraph.y - baseCenter.y;
+    let r0 = Math.hypot(d0x, d0y);
+    let a0 = Math.atan2(d0y, d0x);
+
+    if (r0 < 0.2 && baseVertices.length > 0) {
+      d0x = baseVertices[0].x - baseCenter.x;
+      d0y = baseVertices[0].y - baseCenter.y;
+      r0 = Math.hypot(d0x, d0y);
+      a0 = Math.atan2(d0y, d0x);
+    }
+
+    const dtx = currentGraph.x - baseCenter.x;
+    const dty = currentGraph.y - baseCenter.y;
+    const rt = Math.hypot(dtx, dty);
+    const at = Math.atan2(dty, dtx);
+
+    const scale = Math.max(0.1, rt / (r0 || 1));
+    const deltaTheta = at - a0;
+    const cosD = Math.cos(deltaTheta);
+    const sinD = Math.sin(deltaTheta);
+
+    shape.geometry.vertices = baseVertices.map(v => {
+      const ux = v.x - baseCenter.x;
+      const uy = v.y - baseCenter.y;
+      const rx = scale * (ux * cosD - uy * sinD);
+      const ry = scale * (ux * sinD + uy * cosD);
+      return { x: baseCenter.x + rx, y: baseCenter.y + ry };
+    });
+    shape.geometry.center = { x: baseCenter.x, y: baseCenter.y };
+  } else if (baseGeom.center) {
+    const centerCanvas = graphToCanvas(baseGeom.center.x, baseGeom.center.y, displayWidth, displayHeight);
     const dx = canvasX - centerCanvas.x;
     const dy = canvasY - centerCanvas.y;
     const distPx = Math.hypot(dx, dy);
     const angle = Math.atan2(dy, dx);
 
     if (type === 'circle') {
-      geometry.radius = Math.max(0.5, (distPx / displayWidth) * 20);
+      shape.geometry.radius = Math.max(0.5, (distPx / displayWidth) * 20);
+      shape.geometry.center = { ...baseGeom.center };
     } else if (type === 'ellipse') {
-      geometry.radiusX = Math.max(0.5, (distPx / displayWidth) * 20);
-      geometry.rotation = angle;
+      const baseRatio = (baseGeom.radiusY || 1) / (baseGeom.radiusX || 1);
+      const newRx = Math.max(0.5, (distPx / displayWidth) * 20);
+      shape.geometry.radiusX = newRx;
+      shape.geometry.radiusY = Math.max(0.5, newRx * baseRatio);
+      shape.geometry.rotation = angle;
+      shape.geometry.center = { ...baseGeom.center };
     } else if (type === 'rectangle' || type === 'square') {
-      const w = Math.max(1, (Math.abs(dx) * 2 / displayWidth) * 20);
-      const h = Math.max(1, (Math.abs(dy) * 2 / displayHeight) * 20);
       if (type === 'square') {
-        const side = Math.max(w, h);
-        geometry.width = side;
-        geometry.height = side;
+        const side = Math.max(0.5, (distPx / displayWidth) * 20 * Math.SQRT2);
+        shape.geometry.width = side;
+        shape.geometry.height = side;
+        shape.geometry.rotation = baseGeom.rotation || 0;
       } else {
-        geometry.width = w;
-        geometry.height = h;
+        if (baseGeom.rotation === 0) {
+          shape.geometry.width = Math.max(0.5, (Math.abs(dx) * 2 / displayWidth) * 20);
+          shape.geometry.height = Math.max(0.5, (Math.abs(dy) * 2 / displayHeight) * 20);
+          shape.geometry.rotation = 0;
+        } else {
+          const baseRatio = (baseGeom.height || 1) / (baseGeom.width || 1);
+          const newW = Math.max(0.5, (distPx / displayWidth) * 20 * Math.SQRT2);
+          shape.geometry.width = newW;
+          shape.geometry.height = Math.max(0.5, newW * baseRatio);
+          shape.geometry.rotation = angle;
+        }
       }
-      // If rectangle was axis-aligned, preserve axis-alignment unless actively rotating
-      if (geometry.rotation !== 0 && Math.abs(geometry.rotation) > 0.15) {
-        geometry.rotation = angle;
-      }
+      shape.geometry.center = { ...baseGeom.center };
     } else if (type === 'polygon' || type === 'star') {
       const newRadius = Math.max(0.5, (distPx / displayWidth) * 20);
       if (type === 'polygon') {
-        geometry.radius = newRadius;
+        shape.geometry.radius = newRadius;
       } else {
-        const ratio = geometry.innerRadius / (geometry.outerRadius || 1);
-        geometry.outerRadius = newRadius;
-        geometry.innerRadius = newRadius * (ratio || 0.45);
+        const ratio = (baseGeom.innerRadius || 1) / (baseGeom.outerRadius || 1);
+        shape.geometry.outerRadius = newRadius;
+        shape.geometry.innerRadius = newRadius * (ratio || 0.45);
       }
-      geometry.rotation = angle;
+      shape.geometry.rotation = angle;
+      shape.geometry.center = { ...baseGeom.center };
     }
   }
 }
@@ -743,6 +819,7 @@ function handlePointerUp(event) {
   snapAnchor = null;
   isAdjustingActively = false;
   activeHandle = null;
+  handleDragStart = null;
 
   if (canvas.hasPointerCapture(event.pointerId)) {
     try {
@@ -765,6 +842,7 @@ function handlePointerCancel() {
   snapAnchor = null;
   isAdjustingActively = false;
   activeHandle = null;
+  handleDragStart = null;
 
   if (activePointerId !== null && canvas.hasPointerCapture(activePointerId)) {
     try {
@@ -788,7 +866,12 @@ function handleEditPointerDown(canvasX, canvasY, graphPoint) {
     if (handle) {
       activeHandle = handle;
       appState = 'transformingShape';
-      handleDragStart = { canvasX, canvasY, graphPoint };
+      handleDragStart = {
+        canvasX,
+        canvasY,
+        graphPoint,
+        baseGeometry: JSON.parse(JSON.stringify(selected.geometry))
+      };
       render();
       return;
     }
@@ -809,20 +892,39 @@ function handleEditPointerDown(canvasX, canvasY, graphPoint) {
 
 function handleEditPointerMove(canvasX, canvasY) {
   const selected = shapes.find(s => s.id === selectedShapeId);
-  if (!selected || !activeHandle) return;
+  if (!selected || !activeHandle || !handleDragStart) return;
 
   const currentGraph = canvasToGraph(canvasX, canvasY, displayWidth, displayHeight);
 
-  if (activeHandle === 'center' && selected.geometry.center) {
-    selected.geometry.center = currentGraph;
+  if (activeHandle === 'center') {
+    const dx = currentGraph.x - handleDragStart.graphPoint.x;
+    const dy = currentGraph.y - handleDragStart.graphPoint.y;
+    if (selected.geometry.center) {
+      selected.geometry.center = {
+        x: handleDragStart.baseGeometry.center.x + dx,
+        y: handleDragStart.baseGeometry.center.y + dy
+      };
+    }
+    if (selected.type === 'triangle' && selected.geometry.vertices) {
+      selected.geometry.vertices = handleDragStart.baseGeometry.vertices.map(v => ({
+        x: v.x + dx,
+        y: v.y + dy
+      }));
+    }
   } else {
-    adjustLiveShapeGeometry(selected, canvasX, canvasY);
+    const tempShape = {
+      type: selected.type,
+      geometry: selected.geometry,
+      baseGeometry: handleDragStart.baseGeometry,
+      initialDragGraph: handleDragStart.graphPoint
+    };
+    adjustLiveShapeGeometry(tempShape, canvasX, canvasY);
   }
   render();
 }
 
 function findHitHandle(shape, canvasX, canvasY) {
-  const { geometry } = shape;
+  const { type, geometry } = shape;
   const threshold = 12;
 
   if (geometry.center) {
@@ -831,14 +933,45 @@ function findHitHandle(shape, canvasX, canvasY) {
       return 'center';
     }
   }
+
+  if (type === 'triangle' && geometry.vertices && geometry.vertices.length > 0) {
+    const v0 = graphToCanvas(geometry.vertices[0].x, geometry.vertices[0].y, displayWidth, displayHeight);
+    if (Math.hypot(canvasX - v0.x, canvasY - v0.y) <= threshold) {
+      return 'scale';
+    }
+  }
+
   return 'scale';
+}
+
+function sign(p1, p2, p3) {
+  return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+}
+
+function isPointInTriangle(pt, v1, v2, v3) {
+  const d1 = sign(pt, v1, v2);
+  const d2 = sign(pt, v2, v3);
+  const d3 = sign(pt, v3, v1);
+  const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+  const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+  return !(hasNeg && hasPos);
 }
 
 function findHitShape(canvasX, canvasY) {
   const threshold = 16;
   for (let i = shapes.length - 1; i >= 0; i--) {
     const s = shapes[i];
-    if (s.geometry.center) {
+    if (s.type === 'triangle' && s.geometry.vertices && s.geometry.vertices.length === 3) {
+      const v0 = graphToCanvas(s.geometry.vertices[0].x, s.geometry.vertices[0].y, displayWidth, displayHeight);
+      const v1 = graphToCanvas(s.geometry.vertices[1].x, s.geometry.vertices[1].y, displayWidth, displayHeight);
+      const v2 = graphToCanvas(s.geometry.vertices[2].x, s.geometry.vertices[2].y, displayWidth, displayHeight);
+      if (isPointInTriangle({ x: canvasX, y: canvasY }, v0, v1, v2) ||
+          distToSegment({ x: canvasX, y: canvasY }, v0, v1) <= threshold ||
+          distToSegment({ x: canvasX, y: canvasY }, v1, v2) <= threshold ||
+          distToSegment({ x: canvasX, y: canvasY }, v2, v0) <= threshold) {
+        return s;
+      }
+    } else if (s.geometry.center) {
       const c = graphToCanvas(s.geometry.center.x, s.geometry.center.y, displayWidth, displayHeight);
       const r = ((s.geometry.radius || s.geometry.outerRadius || s.geometry.width || 2) / 20) * displayWidth;
       if (Math.hypot(canvasX - c.x, canvasY - c.y) <= r + threshold) {
@@ -906,7 +1039,8 @@ function handleClear() {
     cleanedCorners: [],
     candidates: [],
     winner: null,
-    selectionReason: 'Canvas cleared.'
+    selectionReason: 'Canvas cleared.',
+    rawStrokeExport: null
   };
 
   updateStrokeCountUI();
@@ -947,11 +1081,83 @@ function toggleDebugPanel() {
   render();
 }
 
+function handleCopyStrokeJSON() {
+  const data = lastRecognitionDebug.rawStrokeExport || (currentStroke ? currentStroke.map(p => ({ x: Number(p.x.toFixed(4)), y: Number(p.y.toFixed(4)) })) : null);
+  if (!data || data.length === 0) {
+    alert('No stroke points recorded yet. Draw a stroke on the canvas first!');
+    return;
+  }
+  const json = JSON.stringify(data);
+  navigator.clipboard.writeText(json).then(() => {
+    if (debugCopyBtn) {
+      const originalText = debugCopyBtn.textContent;
+      debugCopyBtn.textContent = '✅ Copied!';
+      setTimeout(() => { debugCopyBtn.textContent = originalText; }, 1500);
+    }
+  }).catch(() => {
+    prompt('Copy stroke JSON below:', json);
+  });
+}
+
+function handleToggleReplayBox() {
+  if (!debugReplayBox) return;
+  debugReplayBox.classList.toggle('hidden');
+}
+
+function handleRunReplay() {
+  if (!debugReplayInput) return;
+  const raw = debugReplayInput.value.trim();
+  if (!raw) return;
+  try {
+    const pts = JSON.parse(raw);
+    if (!Array.isArray(pts) || pts.length < 3) {
+      alert('Invalid stroke JSON: Must be an array with at least 3 points [{x, y}, ...].');
+      return;
+    }
+    const recognized = recognizeGeometricShape(
+      pts,
+      displayWidth,
+      displayHeight,
+      graphToCanvas,
+      canvasToGraph
+    );
+    updateDebugUI();
+    if (recognized) {
+      shapes.push({
+        id: shapeIdCounter++,
+        type: recognized.type,
+        geometry: recognized.geometry,
+        baseGeometry: JSON.parse(JSON.stringify(recognized.geometry)),
+        rawPoints: pts
+      });
+      updateStatusUI('committed-shape');
+      updateStrokeCountUI();
+      render();
+    } else {
+      updateStatusUI('committed-freehand');
+      shapes.push({
+        id: shapeIdCounter++,
+        type: 'freehand',
+        geometry: { points: pts },
+        rawPoints: pts
+      });
+      updateStrokeCountUI();
+      render();
+    }
+  } catch (err) {
+    alert('Error parsing JSON: ' + err.message);
+  }
+}
+
 // Button Listeners
 modeDrawBtn.addEventListener('click', () => setToolMode('draw'));
 modeEditBtn.addEventListener('click', () => setToolMode('edit'));
 debugToggleBtn.addEventListener('click', toggleDebugPanel);
 clearBtn.addEventListener('click', handleClear);
+
+if (debugCopyBtn) debugCopyBtn.addEventListener('click', handleCopyStrokeJSON);
+if (debugReplayToggleBtn) debugReplayToggleBtn.addEventListener('click', handleToggleReplayBox);
+if (debugRunReplayBtn) debugRunReplayBtn.addEventListener('click', handleRunReplay);
 
 // Pointer Listeners
 canvas.addEventListener('pointerdown', handlePointerDown);

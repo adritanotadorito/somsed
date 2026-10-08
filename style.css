@@ -363,6 +363,50 @@ body {
   font-weight: 600;
 }
 
+.btn-sm {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+}
+
+.debug-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.debug-replay-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background-color: rgba(15, 23, 42, 0.5);
+  padding: 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.debug-replay-box.hidden {
+  display: none !important;
+}
+
+.debug-replay-box textarea {
+  width: 100%;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.725rem;
+  padding: 0.4rem;
+  resize: vertical;
+}
+
+.debug-replay-box textarea:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
 .app-footer {
   text-align: center;
   font-size: 0.8rem;
