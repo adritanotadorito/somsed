@@ -1,14 +1,15 @@
 /**
- * Reverse Desmos - Milestone 3: Mathematical Equations for Recognized Shapes
+ * Reverse Desmos - Milestone 3: Mathematical Equations & Numerical Shape Properties
  * 
  * Manages:
  * 1. Tool Modes: 'draw' (freehand & draw-and-hold snapping) and 'edit' (select & transform).
  * 2. Shape Data Model: typed shapes (line, circle, ellipse, rectangle, square, triangle, polygon, star, freehand).
  * 3. Exact Mathematical Equations: Live derivation and KaTeX display of equations directly from graph geometry.
- * 4. Stable Shape Badges: Canvas badges matched to collapsible equation cards in the results panel.
- * 5. Non-destructive preview and live locked adjustment with real-time equation updating.
- * 6. Post-commit shape selection, manipulation handles, and Clear operations.
- * 7. Development-only Debug Diagnostics Telemetry overlay.
+ * 4. Numerical Shape Properties Panel: Inspect and precisely adjust coordinates and dimensions in graph units.
+ * 5. Stable Shape Badges: Canvas badges matched to collapsible equation cards in the results panel.
+ * 6. Non-destructive preview and live locked adjustment with real-time equation updating.
+ * 7. Post-commit shape selection, manipulation handles, and Clear operations.
+ * 8. Development-only Debug Diagnostics Telemetry overlay.
  */
 
 // ==========================================
@@ -90,6 +91,11 @@ const debugRunReplayBtn = document.getElementById('debug-run-replay-btn');
 const equationsCard = document.getElementById('equations-card');
 const equationsList = document.getElementById('equations-list');
 const equationCountBadge = document.getElementById('equation-count-badge');
+
+// Shape Properties Panel DOM Elements
+const propertiesCard = document.getElementById('properties-card');
+const propertiesShapeBadge = document.getElementById('properties-shape-badge');
+const propertiesBody = document.getElementById('properties-body');
 
 // ==========================================
 // 4. COORDINATE CONVERSION FUNCTIONS
@@ -844,14 +850,14 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
     card.appendChild(mathBox);
   }
 
-  // Click card to select shape in Edit mode
+  // Click card to select shape and open properties
   card.addEventListener('click', () => {
-    if (toolMode === 'edit' && shape.id) {
-      selectedShapeId = (selectedShapeId === shape.id) ? null : shape.id;
-      updateStatusUI(selectedShapeId ? 'edit-selected' : 'idle');
-      updateEquationsUI();
-      render();
-    }
+    selectedShapeId = shape.id;
+    setToolMode('edit');
+    updateStatusUI('edit-selected');
+    updateEquationsUI();
+    renderShapePropertiesUI(shape);
+    render();
   });
 
   return card;
@@ -888,7 +894,7 @@ function updateEquationsUI() {
 
   for (const shape of activeItems) {
     const isPreview = (shape === previewItem);
-    const isSelected = (toolMode === 'edit' && shape.id === selectedShapeId);
+    const isSelected = (shape.id === selectedShapeId);
     const eqData = deriveShapeEquations(shape);
     if (!eqData) continue;
 
@@ -898,7 +904,636 @@ function updateEquationsUI() {
 }
 
 // ==========================================
-// 8. HOLD DETECTION & SNAP CONTROLS
+// 8. NUMERICAL SHAPE PROPERTIES PANEL
+// ==========================================
+
+function formatNumForInput(val) {
+  if (val === null || val === undefined || isNaN(val)) return '0';
+  const rounded = Number(val.toFixed(4));
+  if (Object.is(rounded, -0)) return '0';
+  return rounded.toString();
+}
+
+function isUserTypingInProperties() {
+  if (!propertiesBody) return false;
+  return propertiesBody.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+}
+
+function refreshPropertiesInputsIfSelected(shapeId) {
+  if (isUserTypingInProperties()) return;
+  const selected = shapes.find(s => s.id === shapeId);
+  if (selected) {
+    renderShapePropertiesUI(selected);
+  }
+}
+
+function showPropertyError(msg, inputId = null) {
+  const errBox = document.getElementById('properties-error');
+  const succBox = document.getElementById('properties-success');
+  if (succBox) succBox.classList.add('hidden');
+  if (errBox) {
+    errBox.textContent = `⚠️ ${msg}`;
+    errBox.classList.remove('hidden');
+  }
+  if (inputId) {
+    const inp = document.getElementById(inputId);
+    if (inp) {
+      inp.classList.add('input-error');
+      inp.focus();
+    }
+  }
+}
+
+function showPropertySuccess(msg) {
+  const errBox = document.getElementById('properties-error');
+  const succBox = document.getElementById('properties-success');
+  if (errBox) errBox.classList.add('hidden');
+  if (succBox) {
+    succBox.textContent = `✅ ${msg}`;
+    succBox.classList.remove('hidden');
+    setTimeout(() => {
+      if (succBox) succBox.classList.add('hidden');
+    }, 2500);
+  }
+}
+
+function getNumericFieldValue(inputId, originalVal) {
+  const input = document.getElementById(inputId);
+  if (!input) return originalVal;
+  input.classList.remove('input-error');
+  const trimmed = input.value.trim();
+  if (trimmed === '') throw new Error('Input field cannot be empty');
+  const parsed = parseFloat(trimmed);
+  if (isNaN(parsed) || !isFinite(parsed)) throw new Error('Must be a valid finite number');
+  // If user did not change the formatted string, keep original full-precision value
+  if (trimmed === formatNumForInput(originalVal)) {
+    return originalVal;
+  }
+  return parsed;
+}
+
+/**
+ * Renders the numerical property inputs for the selected shape.
+ */
+function renderShapePropertiesUI(shape) {
+  if (!propertiesBody || !propertiesShapeBadge) return;
+
+  if (!shape) {
+    propertiesShapeBadge.textContent = 'No Selection';
+    propertiesShapeBadge.className = 'properties-shape-badge no-selection';
+    propertiesBody.innerHTML = `
+      <div class="properties-empty-state">
+        <span class="empty-icon">👆</span>
+        <p>No shape selected.</p>
+        <span class="empty-subtext">Click any shape on the canvas or its equation card to inspect and precisely adjust its numerical coordinates and dimensions.</span>
+      </div>
+    `;
+    return;
+  }
+
+  const { type, geometry } = shape;
+  propertiesShapeBadge.textContent = shape.label || capitalize(type);
+  propertiesShapeBadge.className = 'properties-shape-badge';
+
+  if (type === 'freehand') {
+    const ptCount = geometry.points ? geometry.points.length : 0;
+    propertiesBody.innerHTML = `
+      <div class="properties-form">
+        <div class="properties-info-row">
+          <span>Type: <strong>Freehand Stroke</strong></span>
+          <span>Sampled Points: <strong>${ptCount}</strong></span>
+        </div>
+        <div class="properties-note">Freehand strokes cannot be parameterized with exact geometric dimensions.</div>
+      </div>
+    `;
+    return;
+  }
+
+  let fieldsHtml = '';
+  let infoHtml = '';
+
+  switch (type) {
+    case 'line': {
+      const p1 = geometry.p1 || { x: 0, y: 0 };
+      const p2 = geometry.p2 || { x: 0, y: 0 };
+      const len = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const slopeStr = Math.abs(dx) < 1e-5 ? 'Vertical (undefined)' : (dy / dx).toFixed(3);
+
+      fieldsHtml = `
+        <div class="property-group">
+          <label class="property-label" for="prop-p1x">Start X (p1)</label>
+          <input type="number" step="any" id="prop-p1x" class="property-input" value="${formatNumForInput(p1.x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-p1y">Start Y (p1)</label>
+          <input type="number" step="any" id="prop-p1y" class="property-input" value="${formatNumForInput(p1.y)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-p2x">End X (p2)</label>
+          <input type="number" step="any" id="prop-p2x" class="property-input" value="${formatNumForInput(p2.x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-p2y">End Y (p2)</label>
+          <input type="number" step="any" id="prop-p2y" class="property-input" value="${formatNumForInput(p2.y)}" />
+        </div>
+      `;
+      infoHtml = `
+        <div class="properties-info-row">
+          <span>Length: <strong>${len.toFixed(3)}</strong></span>
+          <span>Slope (m): <strong>${slopeStr}</strong></span>
+        </div>
+      `;
+      break;
+    }
+
+    case 'circle': {
+      const c = geometry.center || { x: 0, y: 0 };
+      const r = geometry.radius || 1;
+      const area = Math.PI * r * r;
+
+      fieldsHtml = `
+        <div class="property-group">
+          <label class="property-label" for="prop-cx">Centre X (h)</label>
+          <input type="number" step="any" id="prop-cx" class="property-input" value="${formatNumForInput(c.x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-cy">Centre Y (k)</label>
+          <input type="number" step="any" id="prop-cy" class="property-input" value="${formatNumForInput(c.y)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-radius">Radius (r)</label>
+          <input type="number" step="any" id="prop-radius" class="property-input" value="${formatNumForInput(r)}" min="0.001" />
+        </div>
+      `;
+      infoHtml = `
+        <div class="properties-info-row">
+          <span>Diameter: <strong>${(2 * r).toFixed(3)}</strong></span>
+          <span>Area: <strong>${area.toFixed(3)}</strong></span>
+        </div>
+      `;
+      break;
+    }
+
+    case 'ellipse': {
+      const c = geometry.center || { x: 0, y: 0 };
+      const rx = geometry.radiusX || 1;
+      const ry = geometry.radiusY || 1;
+      const rotDeg = -((geometry.rotation || 0) * 180 / Math.PI);
+      const area = Math.PI * rx * ry;
+
+      fieldsHtml = `
+        <div class="property-group">
+          <label class="property-label" for="prop-cx">Centre X (h)</label>
+          <input type="number" step="any" id="prop-cx" class="property-input" value="${formatNumForInput(c.x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-cy">Centre Y (k)</label>
+          <input type="number" step="any" id="prop-cy" class="property-input" value="${formatNumForInput(c.y)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-rx">Semi-axis a (Radius X)</label>
+          <input type="number" step="any" id="prop-rx" class="property-input" value="${formatNumForInput(rx)}" min="0.001" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-ry">Semi-axis b (Radius Y)</label>
+          <input type="number" step="any" id="prop-ry" class="property-input" value="${formatNumForInput(ry)}" min="0.001" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-rot">Rotation (°)</label>
+          <input type="number" step="any" id="prop-rot" class="property-input" value="${formatNumForInput(rotDeg)}" />
+        </div>
+      `;
+      infoHtml = `
+        <div class="properties-info-row">
+          <span>Area: <strong>${area.toFixed(3)}</strong></span>
+          <span>Ratio (a/b): <strong>${(rx / ry).toFixed(3)}</strong></span>
+        </div>
+      `;
+      break;
+    }
+
+    case 'rectangle': {
+      const c = geometry.center || { x: 0, y: 0 };
+      const w = geometry.width || 1;
+      const h = geometry.height || 1;
+      const rotDeg = -((geometry.rotation || 0) * 180 / Math.PI);
+
+      fieldsHtml = `
+        <div class="property-group">
+          <label class="property-label" for="prop-cx">Centre X</label>
+          <input type="number" step="any" id="prop-cx" class="property-input" value="${formatNumForInput(c.x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-cy">Centre Y</label>
+          <input type="number" step="any" id="prop-cy" class="property-input" value="${formatNumForInput(c.y)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-w">Width</label>
+          <input type="number" step="any" id="prop-w" class="property-input" value="${formatNumForInput(w)}" min="0.001" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-h">Height</label>
+          <input type="number" step="any" id="prop-h" class="property-input" value="${formatNumForInput(h)}" min="0.001" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-rot">Rotation (°)</label>
+          <input type="number" step="any" id="prop-rot" class="property-input" value="${formatNumForInput(rotDeg)}" />
+        </div>
+      `;
+      infoHtml = `
+        <div class="properties-info-row">
+          <span>Perimeter: <strong>${(2 * (w + h)).toFixed(3)}</strong></span>
+          <span>Area: <strong>${(w * h).toFixed(3)}</strong></span>
+        </div>
+      `;
+      break;
+    }
+
+    case 'square': {
+      const c = geometry.center || { x: 0, y: 0 };
+      const side = geometry.width || 1;
+      const rotDeg = -((geometry.rotation || 0) * 180 / Math.PI);
+
+      fieldsHtml = `
+        <div class="property-group">
+          <label class="property-label" for="prop-cx">Centre X</label>
+          <input type="number" step="any" id="prop-cx" class="property-input" value="${formatNumForInput(c.x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-cy">Centre Y</label>
+          <input type="number" step="any" id="prop-cy" class="property-input" value="${formatNumForInput(c.y)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-side">Side Length (s)</label>
+          <input type="number" step="any" id="prop-side" class="property-input" value="${formatNumForInput(side)}" min="0.001" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-rot">Rotation (°)</label>
+          <input type="number" step="any" id="prop-rot" class="property-input" value="${formatNumForInput(rotDeg)}" />
+        </div>
+      `;
+      infoHtml = `
+        <div class="properties-info-row">
+          <span>Perimeter: <strong>${(4 * side).toFixed(3)}</strong></span>
+          <span>Area: <strong>${(side * side).toFixed(3)}</strong></span>
+        </div>
+      `;
+      break;
+    }
+
+    case 'triangle': {
+      const v = geometry.vertices || [
+        { x: 0, y: 1 },
+        { x: -1, y: -1 },
+        { x: 1, y: -1 }
+      ];
+      const area = Math.abs((v[0].x * (v[1].y - v[2].y) + v[1].x * (v[2].y - v[0].y) + v[2].x * (v[0].y - v[1].y)) / 2);
+
+      fieldsHtml = `
+        <div class="property-group">
+          <label class="property-label" for="prop-v0x">Vertex 1 X</label>
+          <input type="number" step="any" id="prop-v0x" class="property-input" value="${formatNumForInput(v[0].x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-v0y">Vertex 1 Y</label>
+          <input type="number" step="any" id="prop-v0y" class="property-input" value="${formatNumForInput(v[0].y)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-v1x">Vertex 2 X</label>
+          <input type="number" step="any" id="prop-v1x" class="property-input" value="${formatNumForInput(v[1].x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-v1y">Vertex 2 Y</label>
+          <input type="number" step="any" id="prop-v1y" class="property-input" value="${formatNumForInput(v[1].y)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-v2x">Vertex 3 X</label>
+          <input type="number" step="any" id="prop-v2x" class="property-input" value="${formatNumForInput(v[2].x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-v2y">Vertex 3 Y</label>
+          <input type="number" step="any" id="prop-v2y" class="property-input" value="${formatNumForInput(v[2].y)}" />
+        </div>
+      `;
+      infoHtml = `
+        <div class="properties-info-row">
+          <span>Area: <strong>${area.toFixed(3)}</strong></span>
+          <span>Centroid: <strong>(${((v[0].x + v[1].x + v[2].x) / 3).toFixed(2)}, ${((v[0].y + v[1].y + v[2].y) / 3).toFixed(2)})</strong></span>
+        </div>
+      `;
+      break;
+    }
+
+    case 'polygon': {
+      const c = geometry.center || { x: 0, y: 0 };
+      const r = geometry.radius || 1;
+      const sides = geometry.sides || 5;
+      const rotDeg = -((geometry.rotation || 0) * 180 / Math.PI);
+
+      fieldsHtml = `
+        <div class="property-group">
+          <label class="property-label" for="prop-cx">Centre X</label>
+          <input type="number" step="any" id="prop-cx" class="property-input" value="${formatNumForInput(c.x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-cy">Centre Y</label>
+          <input type="number" step="any" id="prop-cy" class="property-input" value="${formatNumForInput(c.y)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-radius">Circumradius (r)</label>
+          <input type="number" step="any" id="prop-radius" class="property-input" value="${formatNumForInput(r)}" min="0.001" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-rot">Rotation (°)</label>
+          <input type="number" step="any" id="prop-rot" class="property-input" value="${formatNumForInput(rotDeg)}" />
+        </div>
+      `;
+      infoHtml = `
+        <div class="properties-info-row">
+          <span>Side Count: <strong>${sides}</strong> (${sides}-gon)</span>
+          <span>Interior Angle: <strong>${(((sides - 2) * 180) / sides).toFixed(1)}°</strong></span>
+        </div>
+      `;
+      break;
+    }
+
+    case 'star': {
+      const c = geometry.center || { x: 0, y: 0 };
+      const r1 = geometry.outerRadius || 2;
+      const r2 = geometry.innerRadius || 1;
+      const rotDeg = -((geometry.rotation || 0) * 180 / Math.PI);
+
+      fieldsHtml = `
+        <div class="property-group">
+          <label class="property-label" for="prop-cx">Centre X</label>
+          <input type="number" step="any" id="prop-cx" class="property-input" value="${formatNumForInput(c.x)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-cy">Centre Y</label>
+          <input type="number" step="any" id="prop-cy" class="property-input" value="${formatNumForInput(c.y)}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-r1">Outer Radius (r1)</label>
+          <input type="number" step="any" id="prop-r1" class="property-input" value="${formatNumForInput(r1)}" min="0.001" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-r2">Inner Radius (r2)</label>
+          <input type="number" step="any" id="prop-r2" class="property-input" value="${formatNumForInput(r2)}" min="0.001" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-rot">Rotation (°)</label>
+          <input type="number" step="any" id="prop-rot" class="property-input" value="${formatNumForInput(rotDeg)}" />
+        </div>
+      `;
+      infoHtml = `
+        <div class="properties-info-row">
+          <span>Points: <strong>5</strong></span>
+          <span>Boundary Edges: <strong>10</strong></span>
+        </div>
+      `;
+      break;
+    }
+  }
+
+  propertiesBody.innerHTML = `
+    <form class="properties-form" id="properties-form" onsubmit="return false;">
+      <div class="properties-grid">
+        ${fieldsHtml}
+      </div>
+      ${infoHtml}
+      <div id="properties-error" class="properties-error hidden" role="alert"></div>
+      <div id="properties-success" class="properties-success hidden" role="status"></div>
+      <div class="properties-actions">
+        <button type="button" id="properties-apply-btn" class="btn btn-primary" title="Apply precise numerical changes">
+          Apply Changes
+        </button>
+        <button type="button" id="properties-cancel-btn" class="btn btn-secondary" title="Revert to current shape geometry">
+          Cancel
+        </button>
+      </div>
+      <div class="properties-note">💡 Coordinates and dimensions are in graph units. Press Enter to apply.</div>
+    </form>
+  `;
+
+  // Attach event listeners for Apply, Cancel, and Enter/Escape keys
+  const applyBtn = document.getElementById('properties-apply-btn');
+  const cancelBtn = document.getElementById('properties-cancel-btn');
+
+  if (applyBtn) {
+    applyBtn.addEventListener('click', () => handleApplyShapeProperties(shape));
+  }
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => handleCancelShapeProperties(shape));
+  }
+
+  const inputs = propertiesBody.querySelectorAll('.property-input');
+  inputs.forEach(inp => {
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleApplyShapeProperties(shape);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCancelShapeProperties(shape);
+      }
+    });
+  });
+}
+
+/**
+ * Validates and applies property changes to the selected shape's stored geometry.
+ */
+function handleApplyShapeProperties(shape) {
+  if (!shape || !shape.geometry) return;
+
+  const { type, geometry } = shape;
+
+  try {
+    switch (type) {
+      case 'line': {
+        const p1x = getNumericFieldValue('prop-p1x', geometry.p1.x);
+        const p1y = getNumericFieldValue('prop-p1y', geometry.p1.y);
+        const p2x = getNumericFieldValue('prop-p2x', geometry.p2.x);
+        const p2y = getNumericFieldValue('prop-p2y', geometry.p2.y);
+
+        geometry.p1 = { x: p1x, y: p1y };
+        geometry.p2 = { x: p2x, y: p2y };
+        break;
+      }
+
+      case 'circle': {
+        const cx = getNumericFieldValue('prop-cx', geometry.center.x);
+        const cy = getNumericFieldValue('prop-cy', geometry.center.y);
+        const r = getNumericFieldValue('prop-radius', geometry.radius);
+
+        if (r <= 0) {
+          showPropertyError('Radius must be a positive number greater than 0.', 'prop-radius');
+          return;
+        }
+
+        geometry.center = { x: cx, y: cy };
+        geometry.radius = r;
+        break;
+      }
+
+      case 'ellipse': {
+        const cx = getNumericFieldValue('prop-cx', geometry.center.x);
+        const cy = getNumericFieldValue('prop-cy', geometry.center.y);
+        const rx = getNumericFieldValue('prop-rx', geometry.radiusX);
+        const ry = getNumericFieldValue('prop-ry', geometry.radiusY);
+        const rotDeg = getNumericFieldValue('prop-rot', -((geometry.rotation || 0) * 180 / Math.PI));
+
+        if (rx <= 0) {
+          showPropertyError('Semi-axis a (Radius X) must be greater than 0.', 'prop-rx');
+          return;
+        }
+        if (ry <= 0) {
+          showPropertyError('Semi-axis b (Radius Y) must be greater than 0.', 'prop-ry');
+          return;
+        }
+
+        geometry.center = { x: cx, y: cy };
+        geometry.radiusX = rx;
+        geometry.radiusY = ry;
+        geometry.rotation = -((rotDeg * Math.PI) / 180);
+        break;
+      }
+
+      case 'rectangle': {
+        const cx = getNumericFieldValue('prop-cx', geometry.center.x);
+        const cy = getNumericFieldValue('prop-cy', geometry.center.y);
+        const w = getNumericFieldValue('prop-w', geometry.width);
+        const h = getNumericFieldValue('prop-h', geometry.height);
+        const rotDeg = getNumericFieldValue('prop-rot', -((geometry.rotation || 0) * 180 / Math.PI));
+
+        if (w <= 0) {
+          showPropertyError('Width must be greater than 0.', 'prop-w');
+          return;
+        }
+        if (h <= 0) {
+          showPropertyError('Height must be greater than 0.', 'prop-h');
+          return;
+        }
+
+        geometry.center = { x: cx, y: cy };
+        geometry.width = w;
+        geometry.height = h;
+        geometry.rotation = -((rotDeg * Math.PI) / 180);
+        break;
+      }
+
+      case 'square': {
+        const cx = getNumericFieldValue('prop-cx', geometry.center.x);
+        const cy = getNumericFieldValue('prop-cy', geometry.center.y);
+        const side = getNumericFieldValue('prop-side', geometry.width);
+        const rotDeg = getNumericFieldValue('prop-rot', -((geometry.rotation || 0) * 180 / Math.PI));
+
+        if (side <= 0) {
+          showPropertyError('Side length must be greater than 0.', 'prop-side');
+          return;
+        }
+
+        geometry.center = { x: cx, y: cy };
+        geometry.width = side;
+        geometry.height = side;
+        geometry.rotation = -((rotDeg * Math.PI) / 180);
+        break;
+      }
+
+      case 'triangle': {
+        const v0x = getNumericFieldValue('prop-v0x', geometry.vertices[0].x);
+        const v0y = getNumericFieldValue('prop-v0y', geometry.vertices[0].y);
+        const v1x = getNumericFieldValue('prop-v1x', geometry.vertices[1].x);
+        const v1y = getNumericFieldValue('prop-v1y', geometry.vertices[1].y);
+        const v2x = getNumericFieldValue('prop-v2x', geometry.vertices[2].x);
+        const v2y = getNumericFieldValue('prop-v2y', geometry.vertices[2].y);
+
+        if ((v0x === v1x && v0y === v1y) || (v1x === v2x && v1y === v2y) || (v2x === v0x && v2y === v0y)) {
+          showPropertyError('Triangle vertices cannot be identical.', 'prop-v0x');
+          return;
+        }
+
+        geometry.vertices = [
+          { x: v0x, y: v0y },
+          { x: v1x, y: v1y },
+          { x: v2x, y: v2y }
+        ];
+        geometry.center = {
+          x: (v0x + v1x + v2x) / 3,
+          y: (v0y + v1y + v2y) / 3
+        };
+        break;
+      }
+
+      case 'polygon': {
+        const cx = getNumericFieldValue('prop-cx', geometry.center.x);
+        const cy = getNumericFieldValue('prop-cy', geometry.center.y);
+        const r = getNumericFieldValue('prop-radius', geometry.radius);
+        const rotDeg = getNumericFieldValue('prop-rot', -((geometry.rotation || 0) * 180 / Math.PI));
+
+        if (r <= 0) {
+          showPropertyError('Circumradius must be greater than 0.', 'prop-radius');
+          return;
+        }
+
+        geometry.center = { x: cx, y: cy };
+        geometry.radius = r;
+        geometry.rotation = -((rotDeg * Math.PI) / 180);
+        break;
+      }
+
+      case 'star': {
+        const cx = getNumericFieldValue('prop-cx', geometry.center.x);
+        const cy = getNumericFieldValue('prop-cy', geometry.center.y);
+        const r1 = getNumericFieldValue('prop-r1', geometry.outerRadius);
+        const r2 = getNumericFieldValue('prop-r2', geometry.innerRadius);
+        const rotDeg = getNumericFieldValue('prop-rot', -((geometry.rotation || 0) * 180 / Math.PI));
+
+        if (r1 <= 0) {
+          showPropertyError('Outer radius must be greater than 0.', 'prop-r1');
+          return;
+        }
+        if (r2 <= 0) {
+          showPropertyError('Inner radius must be greater than 0.', 'prop-r2');
+          return;
+        }
+        if (r2 >= r1) {
+          showPropertyError('Inner radius must be strictly less than outer radius.', 'prop-r2');
+          return;
+        }
+
+        geometry.center = { x: cx, y: cy };
+        geometry.outerRadius = r1;
+        geometry.innerRadius = r2;
+        geometry.rotation = -((rotDeg * Math.PI) / 180);
+        break;
+      }
+    }
+
+    // Update base geometry snapshot for future adjustment handles
+    shape.baseGeometry = JSON.parse(JSON.stringify(shape.geometry));
+
+    updateEquationsUI();
+    render();
+    showPropertySuccess('Geometry updated.');
+  } catch (err) {
+    showPropertyError(err.message || 'Invalid input values.');
+  }
+}
+
+/**
+ * Reverts the properties inputs back to the shape's current stored geometry.
+ */
+function handleCancelShapeProperties(shape) {
+  if (shape) {
+    renderShapePropertiesUI(shape);
+  }
+}
+
+// ==========================================
+// 9. HOLD DETECTION & SNAP CONTROLS
 // ==========================================
 
 function cancelHoldTimer() {
@@ -979,7 +1614,7 @@ function updateStatusUI(customState = null) {
       break;
     case 'edit-selected':
       statusBanner.classList.add('is-adjusting');
-      statusText.textContent = 'Shape selected. Drag handles to transform, or click empty space to deselect.';
+      statusText.textContent = 'Shape selected. Drag handles or use the Shape Properties panel below.';
       break;
     case 'idle':
     default:
@@ -1054,7 +1689,7 @@ function capitalize(str) {
 }
 
 // ==========================================
-// 9. POINTER EVENT HANDLING
+// 10. POINTER EVENT HANDLING
 // ==========================================
 
 function getCanvasPointerPosition(event) {
@@ -1232,17 +1867,26 @@ function handlePointerUp(event) {
   if (toolMode === 'draw') {
     if (appState === 'adjustingShape' && snappedShape) {
       shapes.push(snappedShape);
+      selectedShapeId = snappedShape.id;
+      renderShapePropertiesUI(snappedShape);
       updateStatusUI('committed-shape');
     } else if (appState === 'drawing' && currentStroke && currentStroke.length > 0) {
       const freehandLabel = generateShapeLabel('freehand');
-      shapes.push({
+      const freehandShape = {
         id: shapeIdCounter++,
         label: freehandLabel,
         type: 'freehand',
         geometry: { points: currentStroke },
         rawPoints: currentStroke
-      });
+      };
+      shapes.push(freehandShape);
+      selectedShapeId = freehandShape.id;
+      renderShapePropertiesUI(freehandShape);
       updateStatusUI('committed-freehand');
+    }
+  } else if (toolMode === 'edit') {
+    if (selectedShapeId) {
+      refreshPropertiesInputsIfSelected(selectedShapeId);
     }
   }
 
@@ -1276,6 +1920,7 @@ function handlePointerCancel() {
     const selected = shapes.find(s => s.id === selectedShapeId);
     if (selected && handleDragStart.baseGeometry) {
       selected.geometry = JSON.parse(JSON.stringify(handleDragStart.baseGeometry));
+      renderShapePropertiesUI(selected);
     }
   }
 
@@ -1302,7 +1947,7 @@ function handlePointerCancel() {
 }
 
 // ==========================================
-// 10. EDIT MODE INTERACTION (SELECT & TRANSFORM)
+// 11. EDIT MODE INTERACTION (SELECT & TRANSFORM)
 // ==========================================
 
 function handleEditPointerDown(canvasX, canvasY, graphPoint) {
@@ -1328,10 +1973,12 @@ function handleEditPointerDown(canvasX, canvasY, graphPoint) {
     selectedShapeId = hitShape.id;
     appState = 'idle';
     updateStatusUI('edit-selected');
+    renderShapePropertiesUI(hitShape);
   } else {
     selectedShapeId = null;
     appState = 'idle';
     updateStatusUI('idle');
+    renderShapePropertiesUI(null);
   }
   updateEquationsUI();
   render();
@@ -1367,6 +2014,8 @@ function handleEditPointerMove(canvasX, canvasY) {
     };
     adjustLiveShapeGeometry(tempShape, canvasX, canvasY);
   }
+
+  refreshPropertiesInputsIfSelected(selected.id);
   updateEquationsUI();
   render();
 }
@@ -1453,7 +2102,7 @@ function distToSegment(p, a, b) {
 }
 
 // ==========================================
-// 11. UI ACTIONS & LISTENERS
+// 12. UI ACTIONS & LISTENERS
 // ==========================================
 
 function updateStrokeCountUI() {
@@ -1495,14 +2144,12 @@ function handleClear() {
   updateStatusUI('cleared');
   updateDebugUI();
   updateEquationsUI();
+  renderShapePropertiesUI(null);
   render();
 }
 
 function setToolMode(mode) {
   toolMode = mode;
-  selectedShapeId = null;
-  appState = 'idle';
-
   if (mode === 'draw') {
     modeDrawBtn.classList.add('active');
     modeEditBtn.classList.remove('active');
@@ -1574,14 +2221,17 @@ function handleRunReplay() {
     updateDebugUI();
     if (recognized) {
       const shapeLabel = generateShapeLabel(recognized.type, recognized.geometry?.sides);
-      shapes.push({
+      const newShape = {
         id: shapeIdCounter++,
         label: shapeLabel,
         type: recognized.type,
         geometry: recognized.geometry,
         baseGeometry: JSON.parse(JSON.stringify(recognized.geometry)),
         rawPoints: pts
-      });
+      };
+      shapes.push(newShape);
+      selectedShapeId = newShape.id;
+      renderShapePropertiesUI(newShape);
       updateStatusUI('committed-shape');
       updateStrokeCountUI();
       updateEquationsUI();
@@ -1589,13 +2239,16 @@ function handleRunReplay() {
     } else {
       const freehandLabel = generateShapeLabel('freehand');
       updateStatusUI('committed-freehand');
-      shapes.push({
+      const newShape = {
         id: shapeIdCounter++,
         label: freehandLabel,
         type: 'freehand',
         geometry: { points: pts },
         rawPoints: pts
-      });
+      };
+      shapes.push(newShape);
+      selectedShapeId = newShape.id;
+      renderShapePropertiesUI(newShape);
       updateStrokeCountUI();
       updateEquationsUI();
       render();
@@ -1639,3 +2292,4 @@ resizeCanvas();
 updateStatusUI('idle');
 updateDebugUI();
 updateEquationsUI();
+renderShapePropertiesUI(null);

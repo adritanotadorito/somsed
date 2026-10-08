@@ -29,10 +29,13 @@ function formatNum(num, decimals = 2) {
  * h < 0 -> "(x + |h|)"
  */
 function formatShiftedVar(varName, offset, decimals = 2) {
-  if (Math.abs(offset) < 1e-6) {
+  if (offset === null || offset === undefined || isNaN(offset) || Math.abs(offset) < 1e-6) {
     return { latex: varName, text: varName, isZero: true };
   }
   const absValStr = formatNum(Math.abs(offset), decimals);
+  if (absValStr === '0') {
+    return { latex: varName, text: varName, isZero: true };
+  }
   if (offset > 0) {
     return {
       latex: `(${varName} - ${absValStr})`,
@@ -141,11 +144,12 @@ function deriveLineSegmentEquation(p1, p2, decimals = 2) {
   }
 
   let bStr = '';
-  if (Math.abs(b) >= 1e-4) {
+  const absBStr = formatNum(Math.abs(b), decimals);
+  if (absBStr !== '0') {
     if (b > 0) {
-      bStr = ` + ${formatNum(b, decimals)}`;
+      bStr = ` + ${absBStr}`;
     } else {
-      bStr = ` - ${formatNum(Math.abs(b), decimals)}`;
+      bStr = ` - ${absBStr}`;
     }
   }
 

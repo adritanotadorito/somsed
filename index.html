@@ -86,6 +86,27 @@
         <span id="status-text">Draw a shape and hold to snap. Keep dragging to adjust size and angle.</span>
       </div>
 
+      <!-- Numerical Shape Properties Panel -->
+      <section class="properties-card" id="properties-card" aria-label="Shape Properties">
+        <div class="properties-header">
+          <div class="properties-title">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+            </svg>
+            <h3>Shape Properties</h3>
+          </div>
+          <span id="properties-shape-badge" class="properties-shape-badge no-selection">No Selection</span>
+        </div>
+        <div id="properties-body" class="properties-body">
+          <div class="properties-empty-state">
+            <span class="empty-icon">👆</span>
+            <p>No shape selected.</p>
+            <span class="empty-subtext">Click any shape on the canvas or its equation card to inspect and precisely adjust its numerical coordinates and dimensions.</span>
+          </div>
+        </div>
+      </section>
+
       <!-- Mathematical Equations Results Panel -->
       <section class="equations-card" id="equations-card" aria-label="Mathematical Equations">
         <div class="equations-header">
