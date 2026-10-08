@@ -66,6 +66,10 @@ let displayWidth = 0;
 let displayHeight = 0;
 let shapeIdCounter = 1;
 
+// Milestone 4: Backend Equation Fitting Configuration & State
+const BACKEND_FIT_URL = 'http://127.0.0.1:8001/fit';
+let currentFitRequestId = 0;
+
 // ==========================================
 // 3. DOM ELEMENT REFERENCES
 // ==========================================
@@ -254,6 +258,42 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
           ctx.lineTo(p.x, p.y);
         }
         ctx.stroke();
+      }
+
+      // Milestone 4: Fitted Function Curve Overlay (Emerald Green)
+      if (shape.fitData && shape.fitData.success && shape.showOverlay !== false) {
+        const candidates = shape.fitData.candidates || [];
+        const candidateIndex = (shape.selectedCandidateIndex >= 0 && shape.selectedCandidateIndex < candidates.length)
+          ? shape.selectedCandidateIndex
+          : 0;
+        const samples = cand.plot_points || cand.plotting_samples || [];
+        if (cand && samples.length > 1) {
+          ctx.save();
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = isSelected ? STYLES.strokeWidth + 2 : STYLES.strokeWidth + 1.5;
+          ctx.beginPath();
+          const firstPt = graphToCanvas(samples[0].x, samples[0].y, displayWidth, displayHeight);
+          ctx.moveTo(firstPt.x, firstPt.y);
+          for (let i = 1; i < samples.length; i++) {
+            const pt = graphToCanvas(samples[i].x, samples[i].y, displayWidth, displayHeight);
+            ctx.lineTo(pt.x, pt.y);
+          }
+          ctx.stroke();
+
+          // Highlight domain boundary endpoints
+          const startPt = graphToCanvas(samples[0].x, samples[0].y, displayWidth, displayHeight);
+          const endPt = graphToCanvas(samples[samples.length - 1].x, samples[samples.length - 1].y, displayWidth, displayHeight);
+          [startPt, endPt].forEach(p => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#10b981';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+          });
+          ctx.restore();
+        }
       }
       break;
     }
@@ -726,7 +766,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
   header.appendChild(titleTag);
 
   // Copy Actions
-  if (!eqData.isFreehand) {
+  if (!eqData.isFreehand || eqData.isFitted) {
     const actions = document.createElement('div');
     actions.className = 'equation-actions';
 
@@ -767,12 +807,145 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
 
   // Content Box
   if (eqData.isFreehand) {
-    const freehandBox = document.createElement('div');
-    freehandBox.className = 'equation-math-box';
-    freehandBox.style.fontSize = '0.825rem';
-    freehandBox.style.color = '#94a3b8';
-    freehandBox.textContent = eqData.note || 'Freehand stroke (Mathematical curve fitting coming in a future milestone).';
-    card.appendChild(freehandBox);
+    if (shape.fitStatus === 'loading') {
+      const loadingBox = document.createElement('div');
+      loadingBox.className = 'fit-loading-box';
+      loadingBox.innerHTML = `
+        <div class="fit-spinner"></div>
+        <span>Fitting polynomial & absolute value function curves (NumPy/SciPy)...</span>
+      `;
+      card.appendChild(loadingBox);
+    } else if (shape.fitStatus === 'error') {
+      const errBox = document.createElement('div');
+      errBox.className = 'fit-rejection-box';
+      errBox.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+      errBox.style.backgroundColor = 'rgba(239, 68, 68, 0.08)';
+      errBox.style.color = '#fca5a5';
+      errBox.innerHTML = `
+        <div style="font-weight: 600; margin-bottom: 0.25rem;">⚠️ Fitting Backend Offline</div>
+        <div style="font-size: 0.8rem; line-height: 1.4;">${shape.fitError || 'Cannot connect to Python FastAPI backend at http://127.0.0.1:8001.'}</div>
+      `;
+      const retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.className = 'btn-fit';
+      retryBtn.style.marginTop = '0.5rem';
+      retryBtn.style.padding = '0.35rem 0.75rem';
+      retryBtn.textContent = '🔄 Retry Connection';
+      retryBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fitFreehandStroke(shape);
+      });
+      errBox.appendChild(retryBtn);
+      card.appendChild(errBox);
+    } else if (shape.fitStatus === 'rejected') {
+      const rejBox = document.createElement('div');
+      rejBox.className = 'fit-rejection-box';
+      const reason = shape.fitData?.rejection_reason || shape.fitData?.message || 'Curve could not be approximated by supported function families.';
+      rejBox.innerHTML = `
+        <div style="font-weight: 600; margin-bottom: 0.25rem;">ℹ️ Curve Not Fitted</div>
+        <div style="font-size: 0.8rem; line-height: 1.4;">${reason}</div>
+      `;
+      const retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.className = 'btn-fit';
+      retryBtn.style.marginTop = '0.5rem';
+      retryBtn.style.padding = '0.35rem 0.75rem';
+      retryBtn.textContent = '🔄 Try Again';
+      retryBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fitFreehandStroke(shape);
+      });
+      rejBox.appendChild(retryBtn);
+      card.appendChild(rejBox);
+    } else if (eqData.isFitted) {
+      // Candidate pills
+      if (eqData.candidates && eqData.candidates.length > 1) {
+        const candContainer = document.createElement('div');
+        candContainer.className = 'fit-candidates-container';
+        eqData.candidates.forEach((cand, idx) => {
+          const pill = document.createElement('button');
+          pill.type = 'button';
+          pill.className = `fit-candidate-pill ${idx === eqData.candidateIndex ? 'active' : ''}`;
+          const isTop = idx === 0 ? '★ ' : '';
+          pill.innerHTML = `<span>${isTop}${cand.family_name}</span> <span class="fit-rmse-tag">RMSE: ${cand.rmse.toFixed(3)}</span>`;
+          pill.addEventListener('click', (e) => {
+            e.stopPropagation();
+            shape.selectedCandidateIndex = idx;
+            updateEquationsUI();
+            refreshPropertiesInputsIfSelected(shape.id);
+            render();
+          });
+          candContainer.appendChild(pill);
+        });
+        card.appendChild(candContainer);
+      }
+
+      // Math Box
+      const mathBox = document.createElement('div');
+      mathBox.className = 'equation-math-box';
+      const formulaDiv = document.createElement('div');
+      formulaDiv.className = 'equation-formula';
+      renderLatexToElement(eqData.primaryEquation, formulaDiv, true);
+      mathBox.appendChild(formulaDiv);
+
+      const statsDiv = document.createElement('div');
+      statsDiv.className = 'equation-details-sub';
+      statsDiv.innerHTML = `<span>Family: <strong>${eqData.familyName}</strong></span> <span>RMSE: <strong>${eqData.rmse.toFixed(4)}</strong></span> <span>Domain: <strong>[${eqData.domain[0].toFixed(2)}, ${eqData.domain[1].toFixed(2)}]</strong></span>`;
+      mathBox.appendChild(statsDiv);
+      card.appendChild(mathBox);
+
+      // Fit Actions Row
+      const actionRow = document.createElement('div');
+      actionRow.className = 'fit-action-row';
+
+      const overlayBtn = document.createElement('button');
+      overlayBtn.type = 'button';
+      overlayBtn.className = `btn-toggle-overlay ${shape.showOverlay !== false ? 'active' : ''}`;
+      overlayBtn.textContent = shape.showOverlay !== false ? '👁️ Overlay: Visible' : '👁️ Overlay: Hidden';
+      overlayBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        shape.showOverlay = !(shape.showOverlay !== false);
+        overlayBtn.className = `btn-toggle-overlay ${shape.showOverlay ? 'active' : ''}`;
+        overlayBtn.textContent = shape.showOverlay ? '👁️ Overlay: Visible' : '👁️ Overlay: Hidden';
+        render();
+      });
+      actionRow.appendChild(overlayBtn);
+
+      const refitBtn = document.createElement('button');
+      refitBtn.type = 'button';
+      refitBtn.className = 'btn-fit';
+      refitBtn.style.padding = '0.35rem 0.65rem';
+      refitBtn.style.fontSize = '0.78rem';
+      refitBtn.textContent = '🔄 Refit';
+      refitBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fitFreehandStroke(shape);
+      });
+      actionRow.appendChild(refitBtn);
+
+      card.appendChild(actionRow);
+    } else {
+      // Unfitted initial state
+      const freehandBox = document.createElement('div');
+      freehandBox.className = 'equation-math-box';
+      freehandBox.style.fontSize = '0.825rem';
+      freehandBox.style.color = '#94a3b8';
+      freehandBox.textContent = 'Freehand function curve. Click "Fit Equation" to find the closest matching mathematical model (Linear, Quadratic, Cubic, or Absolute Value).';
+      card.appendChild(freehandBox);
+
+      const actionRow = document.createElement('div');
+      actionRow.className = 'fit-action-row';
+      const fitBtn = document.createElement('button');
+      fitBtn.type = 'button';
+      fitBtn.className = 'btn-fit';
+      fitBtn.innerHTML = '⚡ Fit Curve Equation';
+      fitBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fitFreehandStroke(shape);
+      });
+      actionRow.appendChild(fitBtn);
+      card.appendChild(actionRow);
+    }
   } else if (eqData.isMultiEdge) {
     // Polygon / Closed multi-edge shape
     const summaryBox = document.createElement('div');
@@ -903,6 +1076,85 @@ function updateEquationsUI() {
   }
 }
 
+/**
+ * Milestone 4: Performs asynchronous curve fitting via the FastAPI Python backend.
+ */
+async function fitFreehandStroke(shape) {
+  if (!shape || shape.type !== 'freehand') return;
+  const pts = shape.geometry?.points || shape.rawPoints;
+  if (!pts || pts.length < 3) {
+    shape.fitStatus = 'rejected';
+    shape.fitData = {
+      success: false,
+      rejection_reason: 'Stroke contains too few distinct points to fit an equation.'
+    };
+    updateEquationsUI();
+    refreshPropertiesInputsIfSelected(shape.id);
+    render();
+    return;
+  }
+
+  const thisRequestId = ++currentFitRequestId;
+  shape.fitRequestId = thisRequestId;
+  shape.fitStatus = 'loading';
+  shape.fitError = null;
+
+  updateEquationsUI();
+  refreshPropertiesInputsIfSelected(shape.id);
+  render();
+
+  try {
+    const payload = {
+      points: pts.map(p => ({ x: Number(p.x), y: Number(p.y) })),
+      allowed_families: ['linear', 'quadratic', 'cubic', 'absolute_value']
+    };
+
+    const response = await fetch(BACKEND_FIT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errJson = await response.json().catch(() => ({}));
+      throw new Error(errJson.detail || `Server error ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // Stale response guard: check if superseded, cleared, or removed
+    if (shape.fitRequestId !== thisRequestId || !shapes.includes(shape)) {
+      console.log('Discarding stale fit response for request', thisRequestId);
+      return;
+    }
+
+    if (data.success && data.candidates && data.candidates.length > 0) {
+      shape.fitStatus = 'success';
+      shape.fitData = data;
+      shape.selectedCandidateIndex = 0;
+      shape.showOverlay = true;
+    } else {
+      shape.fitStatus = 'rejected';
+      shape.fitData = data;
+    }
+  } catch (err) {
+    if (shape.fitRequestId !== thisRequestId || !shapes.includes(shape)) {
+      return;
+    }
+    console.error('Fit curve error:', err);
+    shape.fitStatus = 'error';
+    shape.fitError = (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')))
+      ? 'Cannot connect to Python FastAPI backend at http://127.0.0.1:8001. Please make sure the backend is running.'
+      : err.message;
+  } finally {
+    updateEquationsUI();
+    refreshPropertiesInputsIfSelected(shape.id);
+    render();
+  }
+}
+
 // ==========================================
 // 8. NUMERICAL SHAPE PROPERTIES PANEL
 // ==========================================
@@ -996,16 +1248,144 @@ function renderShapePropertiesUI(shape) {
   propertiesShapeBadge.className = 'properties-shape-badge';
 
   if (type === 'freehand') {
-    const ptCount = geometry.points ? geometry.points.length : 0;
+    const pts = geometry.points || shape.rawPoints || [];
+    const ptCount = pts.length;
+    let xMin = 0, xMax = 0, yMin = 0, yMax = 0;
+    if (ptCount > 0) {
+      xMin = Math.min(...pts.map(p => p.x));
+      xMax = Math.max(...pts.map(p => p.x));
+      yMin = Math.min(...pts.map(p => p.y));
+      yMax = Math.max(...pts.map(p => p.y));
+    }
+
+    const isFitted = shape.fitData && shape.fitData.success && shape.fitData.candidates && shape.fitData.candidates.length > 0;
+    const candidates = isFitted ? shape.fitData.candidates : [];
+    const selectedIdx = shape.selectedCandidateIndex || 0;
+    const activeCand = isFitted ? (candidates[selectedIdx] || candidates[0]) : null;
+
+    let fitSectionHtml = '';
+    if (shape.fitStatus === 'loading') {
+      fitSectionHtml = `
+        <div class="fit-loading-box" style="margin-top: 0.75rem;">
+          <div class="fit-spinner"></div>
+          <span>Fitting curve equation via backend...</span>
+        </div>
+      `;
+    } else if (shape.fitStatus === 'rejected') {
+      const reason = shape.fitData?.rejection_reason || 'Curve could not be approximated by supported function families.';
+      fitSectionHtml = `
+        <div class="fit-rejection-box" style="margin-top: 0.75rem;">
+          <div style="font-weight: 600; margin-bottom: 0.25rem;">ℹ️ Curve Not Fitted</div>
+          <div style="font-size: 0.8rem; line-height: 1.4;">${reason}</div>
+          <button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.5rem; padding: 0.35rem 0.75rem;">🔄 Try Again</button>
+        </div>
+      `;
+    } else if (shape.fitStatus === 'error') {
+      fitSectionHtml = `
+        <div class="fit-rejection-box" style="margin-top: 0.75rem; border-color: rgba(239, 68, 68, 0.4); background-color: rgba(239, 68, 68, 0.08); color: #fca5a5;">
+          <div style="font-weight: 600; margin-bottom: 0.25rem;">⚠️ Backend Service Offline</div>
+          <div style="font-size: 0.8rem; line-height: 1.4;">${shape.fitError || 'Ensure Python backend is running on port 8001.'}</div>
+          <button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.5rem; padding: 0.35rem 0.75rem;">🔄 Retry Connection</button>
+        </div>
+      `;
+    } else if (isFitted && activeCand) {
+      let paramsHtml = '';
+      const params = activeCand.params || activeCand.parameters || {};
+      for (const [key, val] of Object.entries(params)) {
+        paramsHtml += `
+          <div class="property-group">
+            <label class="property-label">${key}</label>
+            <input type="text" class="property-input" readonly value="${val.toFixed(6)}" style="background: rgba(15, 23, 42, 0.6); color: #94a3b8;" />
+          </div>
+        `;
+      }
+
+      let candPillsHtml = '';
+      if (candidates.length > 1) {
+        candPillsHtml = `
+          <div style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+            <label class="property-label">Candidate Family:</label>
+            <div class="fit-candidates-container" style="margin-top: 0.25rem;">
+              ${candidates.map((c, i) => `
+                <button type="button" class="fit-candidate-pill ${i === selectedIdx ? 'active' : ''}" data-cand-idx="${i}">
+                  <span>${i === 0 ? '★ ' : ''}${c.family_name}</span>
+                  <span class="fit-rmse-tag">RMSE: ${c.rmse.toFixed(3)}</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      fitSectionHtml = `
+        <div class="fit-card-section" style="margin-top: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span style="font-size: 0.85rem; font-weight: 600; color: #38bdf8;">✨ Fitted Model: ${activeCand.family_name}</span>
+            <span class="fit-rmse-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">RMSE: ${activeCand.rmse.toFixed(4)}</span>
+          </div>
+          ${candPillsHtml}
+          <div class="properties-grid" style="margin-top: 0.5rem;">
+            ${paramsHtml}
+          </div>
+          <div class="fit-action-row" style="margin-top: 0.75rem;">
+            <button type="button" class="btn-toggle-overlay ${shape.showOverlay !== false ? 'active' : ''}" id="prop-toggle-overlay-btn">
+              ${shape.showOverlay !== false ? '👁️ Overlay: Visible' : '👁️ Overlay: Hidden'}
+            </button>
+            <button type="button" class="btn-fit" id="prop-refit-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;">🔄 Refit</button>
+          </div>
+        </div>
+      `;
+    } else {
+      fitSectionHtml = `
+        <div class="fit-action-row" style="margin-top: 0.75rem;">
+          <button type="button" class="btn-fit" id="prop-fit-btn" style="width: 100%; justify-content: center;">
+            ⚡ Fit Curve Equation
+          </button>
+        </div>
+      `;
+    }
+
     propertiesBody.innerHTML = `
       <div class="properties-form">
         <div class="properties-info-row">
           <span>Type: <strong>Freehand Stroke</strong></span>
           <span>Sampled Points: <strong>${ptCount}</strong></span>
         </div>
-        <div class="properties-note">Freehand strokes cannot be parameterized with exact geometric dimensions.</div>
+        <div class="properties-info-row">
+          <span>X Domain: <strong>[${xMin.toFixed(2)}, ${xMax.toFixed(2)}]</strong></span>
+          <span>Y Range: <strong>[${yMin.toFixed(2)}, ${yMax.toFixed(2)}]</strong></span>
+        </div>
+        ${fitSectionHtml}
       </div>
     `;
+
+    const fitBtn = document.getElementById('prop-fit-btn');
+    if (fitBtn) fitBtn.addEventListener('click', () => fitFreehandStroke(shape));
+
+    const refitBtn = document.getElementById('prop-refit-btn');
+    if (refitBtn) refitBtn.addEventListener('click', () => fitFreehandStroke(shape));
+
+    const toggleOverlayBtn = document.getElementById('prop-toggle-overlay-btn');
+    if (toggleOverlayBtn) {
+      toggleOverlayBtn.addEventListener('click', () => {
+        shape.showOverlay = !(shape.showOverlay !== false);
+        renderShapePropertiesUI(shape);
+        updateEquationsUI();
+        render();
+      });
+    }
+
+    const candPills = propertiesBody.querySelectorAll('.fit-candidate-pill[data-cand-idx]');
+    candPills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        const idx = parseInt(pill.dataset.candIdx, 10);
+        shape.selectedCandidateIndex = idx;
+        renderShapePropertiesUI(shape);
+        updateEquationsUI();
+        render();
+      });
+    });
+
     return;
   }
 
@@ -1877,7 +2257,11 @@ function handlePointerUp(event) {
         label: freehandLabel,
         type: 'freehand',
         geometry: { points: currentStroke },
-        rawPoints: currentStroke
+        rawPoints: currentStroke,
+        fitStatus: null,
+        fitData: null,
+        selectedCandidateIndex: 0,
+        showOverlay: true
       };
       shapes.push(freehandShape);
       selectedShapeId = freehandShape.id;
@@ -2076,15 +2460,22 @@ function findHitShape(canvasX, canvasY) {
       }
     } else if (s.geometry.p1 && s.geometry.p2) {
       const p1 = graphToCanvas(s.geometry.p1.x, s.geometry.p1.y, displayWidth, displayHeight);
-      const p2 = graphToCanvas(s.geometry.p2.x, geometry.p2.y, displayWidth, displayHeight);
+      const p2 = graphToCanvas(s.geometry.p2.x, s.geometry.p2.y, displayWidth, displayHeight);
       if (distToSegment({ x: canvasX, y: canvasY }, p1, p2) <= threshold) {
         return s;
       }
     } else if (s.type === 'freehand' && s.geometry.points) {
-      for (const pt of s.geometry.points) {
-        const cp = graphToCanvas(pt.x, pt.y, displayWidth, displayHeight);
+      const pts = s.geometry.points;
+      for (let j = 0; j < pts.length; j++) {
+        const cp = graphToCanvas(pts[j].x, pts[j].y, displayWidth, displayHeight);
         if (Math.hypot(canvasX - cp.x, canvasY - cp.y) <= threshold) {
           return s;
+        }
+        if (j > 0) {
+          const prevCp = graphToCanvas(pts[j - 1].x, pts[j - 1].y, displayWidth, displayHeight);
+          if (distToSegment({ x: canvasX, y: canvasY }, prevCp, cp) <= threshold) {
+            return s;
+          }
         }
       }
     }
@@ -2113,6 +2504,7 @@ function updateStrokeCountUI() {
 
 function handleClear() {
   cancelHoldTimer();
+  currentFitRequestId++; // Cancel any in-flight fit requests
   if (activePointerId !== null && canvas.hasPointerCapture(activePointerId)) {
     try {
       canvas.releasePointerCapture(activePointerId);
@@ -2244,7 +2636,11 @@ function handleRunReplay() {
         label: freehandLabel,
         type: 'freehand',
         geometry: { points: pts },
-        rawPoints: pts
+        rawPoints: pts,
+        fitStatus: null,
+        fitData: null,
+        selectedCandidateIndex: 0,
+        showOverlay: true
       };
       shapes.push(newShape);
       selectedShapeId = newShape.id;

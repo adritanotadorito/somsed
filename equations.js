@@ -486,12 +486,41 @@ function deriveShapeEquations(shape, decimals = 2) {
 
     case 'freehand':
     default: {
+      const isFitted = shape.fitData && shape.fitData.success && shape.fitData.candidates && shape.fitData.candidates.length > 0;
+      if (isFitted) {
+        const candidateIndex = (shape.selectedCandidateIndex >= 0 && shape.selectedCandidateIndex < shape.fitData.candidates.length)
+          ? shape.selectedCandidateIndex
+          : 0;
+        const cand = shape.fitData.candidates[candidateIndex];
+        return {
+          shapeId: shape.id,
+          shapeType: 'freehand',
+          title: customTitle || `Fitted Curve ${shape.id || ''}`,
+          isFreehand: true,
+          isFitted: true,
+          candidateIndex,
+          candidate: cand,
+          candidates: shape.fitData.candidates,
+          primaryEquation: cand.latex || cand.latex_with_domain || '',
+          primaryText: cand.text || cand.text_with_domain || '',
+          latexWithoutDomain: cand.latex_without_domain || cand.latex || '',
+          textWithoutDomain: cand.text_without_domain || cand.text || '',
+          domain: cand.domain,
+          rmse: cand.rmse,
+          score: cand.score,
+          parameters: cand.params || cand.parameters || {},
+          plottingSamples: cand.plot_points || cand.plotting_samples || [],
+          familyName: cand.family_name,
+          detailsLatex: `\\text{Family: } ${cand.family_name} \\quad | \\quad \\text{RMSE: } ${cand.rmse.toFixed(3)}`
+        };
+      }
       return {
         shapeId: shape.id,
         shapeType: 'freehand',
         title: customTitle || `Freehand Stroke ${shape.id || ''}`,
         isFreehand: true,
-        note: 'Freehand stroke (Mathematical curve fitting coming in a future milestone).'
+        isFitted: false,
+        note: 'Freehand stroke. Click "Fit Equation" to fit approximate polynomial or absolute value functions.'
       };
     }
   }
