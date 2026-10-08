@@ -407,6 +407,236 @@ body {
   border-color: var(--accent-color);
 }
 
+/* Mathematical Equations Results Panel */
+.equations-card {
+  width: 100%;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: var(--shadow-lg);
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.equations-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.equations-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+}
+
+.equations-title h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.equations-title svg {
+  color: var(--accent-color);
+}
+
+.equation-count-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 9999px;
+  background-color: rgba(56, 189, 248, 0.12);
+  color: var(--accent-color);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.equations-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+}
+
+.empty-icon {
+  font-size: 1.5rem;
+  margin-bottom: 0.25rem;
+  opacity: 0.75;
+}
+
+.equations-empty-state p {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.empty-subtext {
+  font-size: 0.775rem;
+  color: #64748b;
+  max-width: 440px;
+  line-height: 1.4;
+}
+
+.equations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.equation-item {
+  background-color: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.equation-item:hover {
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.equation-item.is-selected {
+  border-color: var(--selected-color);
+  box-shadow: 0 0 0 1px var(--selected-color);
+}
+
+.equation-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.equation-shape-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent-color);
+}
+
+.equation-shape-icon {
+  font-size: 0.85rem;
+}
+
+.equation-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.btn-copy-eq {
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.2rem 0.5rem;
+  border-radius: 5px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-copy-eq:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+.equation-math-box {
+  background-color: rgba(2, 6, 23, 0.5);
+  border-radius: 6px;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 1rem;
+  color: var(--text-primary);
+  overflow-x: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.equation-math-box .katex-display {
+  margin: 0.25rem 0;
+}
+
+.equation-details-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.equation-transforms-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.45rem 0.65rem;
+  background-color: rgba(15, 23, 42, 0.4);
+  border-radius: 4px;
+  border-left: 2px solid var(--accent-color);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.equation-edges-details {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 0.5rem;
+}
+
+.equation-edges-details summary {
+  font-size: 0.775rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: color 0.15s ease;
+}
+
+.equation-edges-details summary:hover {
+  color: var(--accent-color);
+}
+
+.edges-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.45rem;
+  font-size: 0.775rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.edges-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.edge-num {
+  width: 60px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.edge-eq {
+  color: var(--text-primary);
+}
+
 .app-footer {
   text-align: center;
   font-size: 0.8rem;

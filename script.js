@@ -1,12 +1,14 @@
 /**
- * Reverse Desmos - Milestone 2.2: Geometric Shape Recognition & Editing
+ * Reverse Desmos - Milestone 3: Mathematical Equations for Recognized Shapes
  * 
  * Manages:
  * 1. Tool Modes: 'draw' (freehand & draw-and-hold snapping) and 'edit' (select & transform).
  * 2. Shape Data Model: typed shapes (line, circle, ellipse, rectangle, square, triangle, polygon, star, freehand).
- * 3. Non-destructive preview and live locked adjustment (fixed center/start, dynamic scale/rotation).
- * 4. Post-commit shape selection, manipulation handles, and Clear operations.
- * 5. Development-only Debug Diagnostics Telemetry overlay.
+ * 3. Exact Mathematical Equations: Live derivation and KaTeX display of equations directly from graph geometry.
+ * 4. Stable Shape Badges: Canvas badges matched to collapsible equation cards in the results panel.
+ * 5. Non-destructive preview and live locked adjustment with real-time equation updating.
+ * 6. Post-commit shape selection, manipulation handles, and Clear operations.
+ * 7. Development-only Debug Diagnostics Telemetry overlay.
  */
 
 // ==========================================
@@ -84,6 +86,11 @@ const debugReplayBox = document.getElementById('debug-replay-box');
 const debugReplayInput = document.getElementById('debug-replay-input');
 const debugRunReplayBtn = document.getElementById('debug-run-replay-btn');
 
+// Milestone 3: Equations DOM Elements
+const equationsCard = document.getElementById('equations-card');
+const equationsList = document.getElementById('equations-list');
+const equationCountBadge = document.getElementById('equation-count-badge');
+
 // ==========================================
 // 4. COORDINATE CONVERSION FUNCTIONS
 // ==========================================
@@ -128,7 +135,7 @@ function resizeCanvas() {
 }
 
 // ==========================================
-// 6. SHAPE RENDERING FUNCTIONS
+// 6. SHAPE RENDERING & CANVAS LABELS
 // ==========================================
 
 function drawGrid(ctx, width, height) {
@@ -425,6 +432,152 @@ function drawShapeHandles(ctx, shape) {
 }
 
 /**
+ * Calculates optimal label anchor position on canvas for any shape.
+ */
+function getShapeLabelPosition(shape) {
+  const { type, geometry } = shape;
+  if (!geometry) return { x: 30, y: 30 };
+
+  let anchorCanvas = { x: 30, y: 30 };
+
+  switch (type) {
+    case 'line': {
+      const p1 = graphToCanvas(geometry.p1.x, geometry.p1.y, displayWidth, displayHeight);
+      const p2 = graphToCanvas(geometry.p2.x, geometry.p2.y, displayWidth, displayHeight);
+      anchorCanvas = {
+        x: (p1.x + p2.x) / 2,
+        y: Math.min(p1.y, p2.y) - 14
+      };
+      break;
+    }
+    case 'circle': {
+      const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
+      const r = (geometry.radius / 20) * displayWidth;
+      anchorCanvas = {
+        x: c.x,
+        y: c.y - r - 12
+      };
+      break;
+    }
+    case 'ellipse': {
+      const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
+      const maxR = (Math.max(geometry.radiusX || 1, geometry.radiusY || 1) / 20) * Math.max(displayWidth, displayHeight);
+      anchorCanvas = {
+        x: c.x,
+        y: c.y - maxR - 12
+      };
+      break;
+    }
+    case 'rectangle':
+    case 'square': {
+      const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
+      const diag = (Math.hypot(geometry.width || 1, geometry.height || 1) / 2 / 20) * displayWidth;
+      anchorCanvas = {
+        x: c.x,
+        y: c.y - diag - 12
+      };
+      break;
+    }
+    case 'triangle': {
+      if (geometry.vertices && geometry.vertices.length >= 3) {
+        const pts = geometry.vertices.map(v => graphToCanvas(v.x, v.y, displayWidth, displayHeight));
+        const minX = Math.min(...pts.map(p => p.x));
+        const maxX = Math.max(...pts.map(p => p.x));
+        const minY = Math.min(...pts.map(p => p.y));
+        anchorCanvas = {
+          x: (minX + maxX) / 2,
+          y: minY - 12
+        };
+      }
+      break;
+    }
+    case 'polygon':
+    case 'star': {
+      const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
+      const r = ((geometry.radius || geometry.outerRadius || 2) / 20) * displayWidth;
+      anchorCanvas = {
+        x: c.x,
+        y: c.y - r - 12
+      };
+      break;
+    }
+    case 'freehand': {
+      if (geometry.points && geometry.points.length > 0) {
+        const pts = geometry.points.map(p => graphToCanvas(p.x, p.y, displayWidth, displayHeight));
+        const minX = Math.min(...pts.map(p => p.x));
+        const maxX = Math.max(...pts.map(p => p.x));
+        const minY = Math.min(...pts.map(p => p.y));
+        anchorCanvas = {
+          x: (minX + maxX) / 2,
+          y: minY - 12
+        };
+      }
+      break;
+    }
+  }
+
+  // Keep labels comfortably within canvas bounds
+  const padX = 40;
+  const padY = 16;
+  return {
+    x: Math.max(padX, Math.min(displayWidth - padX, anchorCanvas.x)),
+    y: Math.max(padY, Math.min(displayHeight - padY, anchorCanvas.y))
+  };
+}
+
+/**
+ * Draws crisp matching shape labels directly on the canvas near each shape.
+ */
+function drawShapeCanvasLabels(ctx) {
+  const shapesToLabel = [...shapes];
+  if (appState === 'adjustingShape' && snappedShape) {
+    shapesToLabel.push(snappedShape);
+  }
+
+  if (shapesToLabel.length === 0) return;
+
+  ctx.save();
+  ctx.font = `600 11px ${STYLES.fontFamily}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (const shape of shapesToLabel) {
+    const isSelected = (toolMode === 'edit' && shape.id === selectedShapeId);
+    const isPreview = (shape === snappedShape);
+    const labelText = shape.label || `${capitalize(shape.type)} ${shape.id}`;
+    const pos = getShapeLabelPosition(shape);
+
+    const textWidth = ctx.measureText(labelText).width;
+    const badgeW = textWidth + 14;
+    const badgeH = 20;
+    const radius = 5;
+
+    // Badge Background
+    ctx.beginPath();
+    ctx.roundRect(pos.x - badgeW / 2, pos.y - badgeH / 2, badgeW, badgeH, radius);
+    if (isSelected) {
+      ctx.fillStyle = '#7c3aed';
+      ctx.strokeStyle = '#c4b5fd';
+    } else if (isPreview) {
+      ctx.fillStyle = '#0284c7';
+      ctx.strokeStyle = '#7dd3fc';
+    } else {
+      ctx.fillStyle = '#1e293b';
+      ctx.strokeStyle = '#475569';
+    }
+    ctx.lineWidth = 1;
+    ctx.fill();
+    ctx.stroke();
+
+    // Badge Text
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(labelText, pos.x, pos.y + 0.5);
+  }
+
+  ctx.restore();
+}
+
+/**
  * Draws debug corner markers if debug mode is active.
  */
 function drawDebugCorners(ctx) {
@@ -465,11 +618,287 @@ function render() {
     drawShape(ctx, { type: 'freehand', geometry: { points: currentStroke } });
   }
 
+  drawShapeCanvasLabels(ctx);
   drawDebugCorners(ctx);
 }
 
 // ==========================================
-// 7. HOLD DETECTION & SNAP CONTROLS
+// 7. MATHEMATICAL EQUATIONS UI & FORMATTING
+// ==========================================
+
+function getShapeIcon(type) {
+  switch (type) {
+    case 'line': return '📏';
+    case 'circle': return '⭕';
+    case 'ellipse': return '⬭';
+    case 'rectangle': return '▭';
+    case 'square': return '◻️';
+    case 'triangle': return '📐';
+    case 'polygon': return '⬡';
+    case 'star': return '⭐';
+    case 'freehand': return '✏️';
+    default: return '📐';
+  }
+}
+
+/**
+ * Generates stable, readable labels such as "Circle 1" or "Triangle 2".
+ */
+function generateShapeLabel(type, sides = null) {
+  let prefix = 'Shape';
+  switch (type) {
+    case 'line': prefix = 'Line'; break;
+    case 'circle': prefix = 'Circle'; break;
+    case 'ellipse': prefix = 'Ellipse'; break;
+    case 'rectangle': prefix = 'Rectangle'; break;
+    case 'square': prefix = 'Square'; break;
+    case 'triangle': prefix = 'Triangle'; break;
+    case 'polygon': prefix = `${sides || 5}-gon`; break;
+    case 'star': prefix = 'Star'; break;
+    case 'freehand': prefix = 'Freehand'; break;
+  }
+  const count = shapes.filter(s => s.type === type).length + 1;
+  return `${prefix} ${count}`;
+}
+
+function renderLatexToElement(latex, container, isDisplay = true) {
+  if (window.katex) {
+    try {
+      window.katex.render(latex, container, {
+        throwOnError: false,
+        displayMode: isDisplay
+      });
+      return;
+    } catch (e) {
+      console.warn('KaTeX render error:', e);
+    }
+  }
+  container.textContent = latex;
+}
+
+function copyTextToClipboard(text, btnElement) {
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btnElement.textContent;
+    btnElement.textContent = '✅ Copied!';
+    btnElement.style.color = '#38bdf8';
+    setTimeout(() => {
+      btnElement.textContent = orig;
+      btnElement.style.color = '';
+    }, 1500);
+  }).catch(() => {
+    prompt('Copy equation below:', text);
+  });
+}
+
+/**
+ * Constructs an interactive, accessible card for a shape's mathematical equations.
+ */
+function createEquationCard(shape, eqData, isSelected, isPreview) {
+  const card = document.createElement('div');
+  card.className = `equation-item ${isSelected ? 'is-selected' : ''}`;
+  card.dataset.shapeId = shape.id;
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'equation-item-header';
+
+  const titleTag = document.createElement('div');
+  titleTag.className = 'equation-shape-tag';
+  titleTag.innerHTML = `<span class="equation-shape-icon">${getShapeIcon(shape.type)}</span><span>${eqData.title}</span>`;
+
+  if (isPreview) {
+    const previewBadge = document.createElement('span');
+    previewBadge.className = 'badge';
+    previewBadge.style.fontSize = '0.65rem';
+    previewBadge.style.backgroundColor = 'rgba(2, 132, 199, 0.2)';
+    previewBadge.style.color = '#38bdf8';
+    previewBadge.style.marginLeft = '0.4rem';
+    previewBadge.textContent = 'Previewing...';
+    titleTag.appendChild(previewBadge);
+  }
+  header.appendChild(titleTag);
+
+  // Copy Actions
+  if (!eqData.isFreehand) {
+    const actions = document.createElement('div');
+    actions.className = 'equation-actions';
+
+    const copyLatexBtn = document.createElement('button');
+    copyLatexBtn.type = 'button';
+    copyLatexBtn.className = 'btn-copy-eq';
+    copyLatexBtn.title = 'Copy LaTeX equation to clipboard';
+    copyLatexBtn.textContent = 'Copy LaTeX';
+    copyLatexBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      let latexToCopy = eqData.primaryEquation || '';
+      if (eqData.isMultiEdge && eqData.edges) {
+        latexToCopy = eqData.edges.map(ed => `\\text{Edge } ${ed.edgeIndex}: ${ed.latex}`).join('\n');
+      }
+      copyTextToClipboard(latexToCopy, copyLatexBtn);
+    });
+
+    const copyTextBtn = document.createElement('button');
+    copyTextBtn.type = 'button';
+    copyTextBtn.className = 'btn-copy-eq';
+    copyTextBtn.title = 'Copy Plain Text equation to clipboard';
+    copyTextBtn.textContent = 'Copy Text';
+    copyTextBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      let textToCopy = eqData.primaryText || '';
+      if (eqData.isMultiEdge && eqData.edges) {
+        textToCopy = eqData.edges.map(ed => `Edge ${ed.edgeIndex}: ${ed.text}`).join('\n');
+      }
+      copyTextToClipboard(textToCopy, copyTextBtn);
+    });
+
+    actions.appendChild(copyLatexBtn);
+    actions.appendChild(copyTextBtn);
+    header.appendChild(actions);
+  }
+
+  card.appendChild(header);
+
+  // Content Box
+  if (eqData.isFreehand) {
+    const freehandBox = document.createElement('div');
+    freehandBox.className = 'equation-math-box';
+    freehandBox.style.fontSize = '0.825rem';
+    freehandBox.style.color = '#94a3b8';
+    freehandBox.textContent = eqData.note || 'Freehand stroke (Mathematical curve fitting coming in a future milestone).';
+    card.appendChild(freehandBox);
+  } else if (eqData.isMultiEdge) {
+    // Polygon / Closed multi-edge shape
+    const summaryBox = document.createElement('div');
+    summaryBox.className = 'equation-math-box';
+
+    const summaryText = document.createElement('div');
+    summaryText.style.fontSize = '0.85rem';
+    summaryText.style.fontWeight = '500';
+    summaryText.style.color = '#f8fafc';
+    summaryText.textContent = `Piecewise Boundary (${eqData.edgeCount} Edges)`;
+    summaryBox.appendChild(summaryText);
+
+    const details = document.createElement('details');
+    details.className = 'equation-edges-details';
+    details.open = true;
+
+    const summary = document.createElement('summary');
+    summary.textContent = `Boundary Edge Equations (${eqData.edgeCount})`;
+    details.appendChild(summary);
+
+    const table = document.createElement('table');
+    table.className = 'edges-table';
+    const tbody = document.createElement('tbody');
+
+    eqData.edges.forEach(edge => {
+      const tr = document.createElement('tr');
+      const tdNum = document.createElement('td');
+      tdNum.className = 'edge-num';
+      tdNum.textContent = `Edge ${edge.edgeIndex}`;
+
+      const tdEq = document.createElement('td');
+      tdEq.className = 'edge-eq';
+      renderLatexToElement(edge.latex, tdEq, false);
+
+      tr.appendChild(tdNum);
+      tr.appendChild(tdEq);
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    details.appendChild(table);
+    summaryBox.appendChild(details);
+    card.appendChild(summaryBox);
+  } else {
+    // Single equation shape (Line, Circle, Ellipse)
+    const mathBox = document.createElement('div');
+    mathBox.className = 'equation-math-box';
+
+    const formulaDiv = document.createElement('div');
+    formulaDiv.className = 'equation-formula';
+    renderLatexToElement(eqData.primaryEquation, formulaDiv, true);
+    mathBox.appendChild(formulaDiv);
+
+    if (eqData.transformDefinitions) {
+      const transBox = document.createElement('div');
+      transBox.className = 'equation-transforms-box';
+
+      const uDiv = document.createElement('div');
+      renderLatexToElement(eqData.transformDefinitions.uLatex, uDiv, false);
+      const vDiv = document.createElement('div');
+      renderLatexToElement(eqData.transformDefinitions.vLatex, vDiv, false);
+
+      transBox.appendChild(uDiv);
+      transBox.appendChild(vDiv);
+      mathBox.appendChild(transBox);
+    }
+
+    if (eqData.detailsLatex) {
+      const detailsDiv = document.createElement('div');
+      detailsDiv.className = 'equation-details-sub';
+      renderLatexToElement(eqData.detailsLatex, detailsDiv, false);
+      mathBox.appendChild(detailsDiv);
+    }
+
+    card.appendChild(mathBox);
+  }
+
+  // Click card to select shape in Edit mode
+  card.addEventListener('click', () => {
+    if (toolMode === 'edit' && shape.id) {
+      selectedShapeId = (selectedShapeId === shape.id) ? null : shape.id;
+      updateStatusUI(selectedShapeId ? 'edit-selected' : 'idle');
+      updateEquationsUI();
+      render();
+    }
+  });
+
+  return card;
+}
+
+/**
+ * Updates the Mathematical Equations panel with all committed & live-adjusting shapes.
+ */
+function updateEquationsUI() {
+  if (!equationsList || !equationCountBadge) return;
+
+  const activeItems = [...shapes];
+  let previewItem = null;
+  if (appState === 'adjustingShape' && snappedShape) {
+    activeItems.push(snappedShape);
+    previewItem = snappedShape;
+  }
+
+  const mathShapeCount = activeItems.filter(s => s.type !== 'freehand').length;
+  equationCountBadge.textContent = `${mathShapeCount} ${mathShapeCount === 1 ? 'Shape' : 'Shapes'}`;
+
+  if (activeItems.length === 0) {
+    equationsList.innerHTML = `
+      <div class="equations-empty-state">
+        <span class="empty-icon">📐</span>
+        <p>No recognized shapes yet.</p>
+        <span class="empty-subtext">Draw and hold a line, circle, ellipse, rectangle, triangle, polygon, or star to see its exact mathematical equations.</span>
+      </div>
+    `;
+    return;
+  }
+
+  equationsList.innerHTML = '';
+
+  for (const shape of activeItems) {
+    const isPreview = (shape === previewItem);
+    const isSelected = (toolMode === 'edit' && shape.id === selectedShapeId);
+    const eqData = deriveShapeEquations(shape);
+    if (!eqData) continue;
+
+    const card = createEquationCard(shape, eqData, isSelected, isPreview);
+    equationsList.appendChild(card);
+  }
+}
+
+// ==========================================
+// 8. HOLD DETECTION & SNAP CONTROLS
 // ==========================================
 
 function cancelHoldTimer() {
@@ -501,8 +930,10 @@ function triggerHoldSnap() {
   if (recognized) {
     rawStrokeBackup = [...currentStroke];
     const initialDragGraph = canvasToGraph(holdAnchor.x, holdAnchor.y, displayWidth, displayHeight);
+    const shapeLabel = generateShapeLabel(recognized.type, recognized.geometry?.sides);
     snappedShape = {
       id: shapeIdCounter++,
+      label: shapeLabel,
       type: recognized.type,
       geometry: recognized.geometry,
       baseGeometry: JSON.parse(JSON.stringify(recognized.geometry)),
@@ -516,6 +947,7 @@ function triggerHoldSnap() {
     snapAnchor = holdAnchor;
 
     updateStatusUI();
+    updateEquationsUI();
     render();
   }
 }
@@ -537,7 +969,7 @@ function updateStatusUI(customState = null) {
       break;
     case 'committed-shape':
       statusBanner.classList.add('is-snapped');
-      statusText.textContent = 'Shape saved to grid.';
+      statusText.textContent = 'Shape saved to grid with mathematical equations.';
       break;
     case 'committed-freehand':
       statusText.textContent = 'Freehand stroke saved.';
@@ -622,7 +1054,7 @@ function capitalize(str) {
 }
 
 // ==========================================
-// 8. POINTER EVENT HANDLING
+// 9. POINTER EVENT HANDLING
 // ==========================================
 
 function getCanvasPointerPosition(event) {
@@ -692,6 +1124,7 @@ function handlePointerMove(event) {
 
     if (isAdjustingActively) {
       adjustLiveShapeGeometry(snappedShape, canvasX, canvasY);
+      updateEquationsUI();
       render();
     }
   }
@@ -801,8 +1234,10 @@ function handlePointerUp(event) {
       shapes.push(snappedShape);
       updateStatusUI('committed-shape');
     } else if (appState === 'drawing' && currentStroke && currentStroke.length > 0) {
+      const freehandLabel = generateShapeLabel('freehand');
       shapes.push({
         id: shapeIdCounter++,
+        label: freehandLabel,
         type: 'freehand',
         geometry: { points: currentStroke },
         rawPoints: currentStroke
@@ -829,11 +1264,21 @@ function handlePointerUp(event) {
   activePointerId = null;
 
   updateStrokeCountUI();
+  updateEquationsUI();
   render();
 }
 
 function handlePointerCancel() {
   cancelHoldTimer();
+
+  // If cancelling during an edit drag, restore original geometry
+  if (handleDragStart && selectedShapeId) {
+    const selected = shapes.find(s => s.id === selectedShapeId);
+    if (selected && handleDragStart.baseGeometry) {
+      selected.geometry = JSON.parse(JSON.stringify(handleDragStart.baseGeometry));
+    }
+  }
+
   appState = 'idle';
   currentStroke = null;
   snappedShape = null;
@@ -852,11 +1297,12 @@ function handlePointerCancel() {
   activePointerId = null;
 
   updateStatusUI('idle');
+  updateEquationsUI();
   render();
 }
 
 // ==========================================
-// 9. EDIT MODE INTERACTION (SELECT & TRANSFORM)
+// 10. EDIT MODE INTERACTION (SELECT & TRANSFORM)
 // ==========================================
 
 function handleEditPointerDown(canvasX, canvasY, graphPoint) {
@@ -887,6 +1333,7 @@ function handleEditPointerDown(canvasX, canvasY, graphPoint) {
     appState = 'idle';
     updateStatusUI('idle');
   }
+  updateEquationsUI();
   render();
 }
 
@@ -920,6 +1367,7 @@ function handleEditPointerMove(canvasX, canvasY) {
     };
     adjustLiveShapeGeometry(tempShape, canvasX, canvasY);
   }
+  updateEquationsUI();
   render();
 }
 
@@ -979,7 +1427,7 @@ function findHitShape(canvasX, canvasY) {
       }
     } else if (s.geometry.p1 && s.geometry.p2) {
       const p1 = graphToCanvas(s.geometry.p1.x, s.geometry.p1.y, displayWidth, displayHeight);
-      const p2 = graphToCanvas(s.geometry.p2.x, s.geometry.p2.y, displayWidth, displayHeight);
+      const p2 = graphToCanvas(s.geometry.p2.x, geometry.p2.y, displayWidth, displayHeight);
       if (distToSegment({ x: canvasX, y: canvasY }, p1, p2) <= threshold) {
         return s;
       }
@@ -1005,7 +1453,7 @@ function distToSegment(p, a, b) {
 }
 
 // ==========================================
-// 10. UI ACTIONS & LISTENERS
+// 11. UI ACTIONS & LISTENERS
 // ==========================================
 
 function updateStrokeCountUI() {
@@ -1046,6 +1494,7 @@ function handleClear() {
   updateStrokeCountUI();
   updateStatusUI('cleared');
   updateDebugUI();
+  updateEquationsUI();
   render();
 }
 
@@ -1065,6 +1514,7 @@ function setToolMode(mode) {
   }
 
   updateStatusUI('idle');
+  updateEquationsUI();
   render();
 }
 
@@ -1123,8 +1573,10 @@ function handleRunReplay() {
     );
     updateDebugUI();
     if (recognized) {
+      const shapeLabel = generateShapeLabel(recognized.type, recognized.geometry?.sides);
       shapes.push({
         id: shapeIdCounter++,
+        label: shapeLabel,
         type: recognized.type,
         geometry: recognized.geometry,
         baseGeometry: JSON.parse(JSON.stringify(recognized.geometry)),
@@ -1132,16 +1584,20 @@ function handleRunReplay() {
       });
       updateStatusUI('committed-shape');
       updateStrokeCountUI();
+      updateEquationsUI();
       render();
     } else {
+      const freehandLabel = generateShapeLabel('freehand');
       updateStatusUI('committed-freehand');
       shapes.push({
         id: shapeIdCounter++,
+        label: freehandLabel,
         type: 'freehand',
         geometry: { points: pts },
         rawPoints: pts
       });
       updateStrokeCountUI();
+      updateEquationsUI();
       render();
     }
   } catch (err) {
@@ -1173,7 +1629,13 @@ const resizeObserver = new ResizeObserver(() => {
 });
 resizeObserver.observe(canvas.parentElement);
 
+// Ensure KaTeX equations render if script loaded asynchronously
+window.addEventListener('load', () => {
+  updateEquationsUI();
+});
+
 // Initial setup
 resizeCanvas();
 updateStatusUI('idle');
 updateDebugUI();
+updateEquationsUI();

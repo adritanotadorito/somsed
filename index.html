@@ -7,6 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -14,10 +16,10 @@
     <header class="app-header">
       <div class="brand">
         <h1>Reverse Desmos</h1>
-        <span class="badge">Milestone 2.2</span>
+        <span class="badge">Milestone 3</span>
       </div>
       <p class="instructions">
-        Draw a line, circle, ellipse, rectangle, triangle, polygon (5–8 sides), or star and hold to snap. Switch to Edit mode to transform saved shapes.
+        Draw a line, circle, ellipse, rectangle, triangle, polygon (5–8 sides), or star and hold to snap. View exact mathematical equations below or switch to Edit mode to transform shapes.
       </p>
     </header>
 
@@ -84,6 +86,29 @@
         <span id="status-text">Draw a shape and hold to snap. Keep dragging to adjust size and angle.</span>
       </div>
 
+      <!-- Mathematical Equations Results Panel -->
+      <section class="equations-card" id="equations-card" aria-label="Mathematical Equations">
+        <div class="equations-header">
+          <div class="equations-title">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+              <path d="M6 6h10"></path>
+              <path d="M6 10h10"></path>
+              <path d="M6 14h6"></path>
+            </svg>
+            <h3>Mathematical Equations</h3>
+          </div>
+          <span id="equation-count-badge" class="equation-count-badge">0 Shapes</span>
+        </div>
+        <div id="equations-list" class="equations-list">
+          <div class="equations-empty-state">
+            <span class="empty-icon">📐</span>
+            <p>No recognized shapes yet.</p>
+            <span class="empty-subtext">Draw and hold a line, circle, ellipse, rectangle, triangle, polygon, or star to see its exact mathematical equations.</span>
+          </div>
+        </div>
+      </section>
+
       <!-- Development-Only Debug Diagnostics Panel (Hidden by default) -->
       <div id="debug-panel" class="debug-panel hidden">
         <div class="debug-header">
@@ -112,11 +137,12 @@
     </main>
 
     <footer class="app-footer">
-      <p>Supported shapes: <code>Lines</code>, <code>Circles</code>, <code>Ellipses</code>, <code>Rectangles/Squares</code>, <code>Triangles</code>, <code>Polygons (5–8)</code>, <code>Stars</code>.</p>
+      <p>Supported equations: <code>Lines</code>, <code>Circles</code>, <code>Ellipses</code>, <code>Rectangles/Squares</code>, <code>Triangles</code>, <code>Polygons (5–8)</code>, <code>Stars</code>.</p>
     </footer>
   </div>
 
   <script src="recognition.js"></script>
+  <script src="equations.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
