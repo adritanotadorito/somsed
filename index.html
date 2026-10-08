@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Reverse Desmos — Locked Straight-Line Adjustment</title>
+  <title>Reverse Desmos — Geometric Shape Recognition & Editing</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -14,50 +14,97 @@
     <header class="app-header">
       <div class="brand">
         <h1>Reverse Desmos</h1>
-        <span class="badge">Milestone 2.1</span>
+        <span class="badge">Milestone 2.2</span>
       </div>
       <p class="instructions">
-        Draw a line and hold to straighten. Keep dragging to adjust its length and angle; release to finish.
+        Draw a line, circle, ellipse, rectangle, triangle, polygon (5–8 sides), or star and hold to snap. Switch to Edit mode to transform saved shapes.
       </p>
     </header>
 
     <main class="canvas-wrapper">
       <div class="canvas-card">
-        <canvas id="graph-canvas" aria-label="Interactive coordinate grid for drawing graphs"></canvas>
+        <canvas id="graph-canvas" aria-label="Interactive coordinate grid for drawing and recognizing geometric graphs"></canvas>
       </div>
 
       <div class="controls-bar">
+        <div class="mode-toggle-group" role="radiogroup" aria-label="Tool mode">
+          <button type="button" id="mode-draw-btn" class="mode-btn active" title="Draw Mode (Draw freehand or hold to snap)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+              <path d="M2 2l7.586 7.586"></path>
+              <circle cx="11" cy="11" r="2"></circle>
+            </svg>
+            Draw
+          </button>
+          <button type="button" id="mode-edit-btn" class="mode-btn" title="Edit Mode (Select and transform shapes)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"></path>
+              <path d="M13 13l6 6"></path>
+            </svg>
+            Edit
+          </button>
+        </div>
+
         <div class="stats" id="stats-display">
           <span class="stat-item">Domain: <strong>[-10, 10]</strong></span>
           <span class="stat-divider">•</span>
-          <span class="stat-item">Range: <strong>[-10, 10]</strong></span>
-          <span class="stat-divider">•</span>
-          <span class="stat-item">Strokes: <strong id="stroke-count">0</strong></span>
+          <span class="stat-item">Items: <strong id="stroke-count">0</strong></span>
         </div>
 
         <div class="actions">
-          <button id="clear-btn" type="button" class="btn btn-secondary" title="Clear all drawings (Preserves grid)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button id="debug-toggle-btn" type="button" class="btn btn-secondary debug-btn" title="Toggle Recognition Diagnostics Telemetry">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="8" height="14" x="8" y="6" rx="4"></rect>
+              <path d="m19 7-3 2"></path>
+              <path d="m5 7 3 2"></path>
+              <path d="m19 19-3-2"></path>
+              <path d="m5 19 3-2"></path>
+              <path d="M20 13h-4"></path>
+              <path d="M4 13h4"></path>
+              <path d="m10 4 1 2"></path>
+              <path d="m14 4-1 2"></path>
+            </svg>
+            Debug
+          </button>
+
+          <button id="clear-btn" type="button" class="btn btn-secondary" title="Clear all shapes and drawings">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 6h18"></path>
               <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
               <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
             </svg>
-            Clear Drawing
+            Clear Canvas
           </button>
         </div>
       </div>
 
       <div class="status-banner" id="status-banner" aria-live="polite">
         <span class="status-dot"></span>
-        <span id="status-text">Draw a line and hold to straighten. Keep dragging to adjust its length and angle; release to finish.</span>
+        <span id="status-text">Draw a shape and hold to snap. Keep dragging to adjust size and angle.</span>
+      </div>
+
+      <!-- Development-Only Debug Diagnostics Panel (Hidden by default) -->
+      <div id="debug-panel" class="debug-panel hidden">
+        <div class="debug-header">
+          <div class="debug-title">
+            <span class="debug-icon">🐞</span>
+            <h4>Recognition Telemetry</h4>
+          </div>
+          <span id="debug-winner-badge" class="debug-badge">No Attempts</span>
+        </div>
+        <div class="debug-body" id="debug-content">
+          <p class="debug-placeholder">Draw and hold a stroke on the canvas to inspect candidate scores, structural checks, orientation, and corner detection.</p>
+        </div>
       </div>
     </main>
 
     <footer class="app-footer">
-      <p>Fixed coordinate space: <code>x ∈ [-10, 10]</code>, <code>y ∈ [-10, 10]</code>. Total least-squares line recognition enabled.</p>
+      <p>Supported shapes: <code>Lines</code>, <code>Circles</code>, <code>Ellipses</code>, <code>Rectangles/Squares</code>, <code>Triangles</code>, <code>Polygons (5–8)</code>, <code>Stars</code>.</p>
     </footer>
   </div>
 
+  <script src="recognition.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
