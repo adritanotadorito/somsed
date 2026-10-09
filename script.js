@@ -753,6 +753,13 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
   titleTag.className = 'equation-shape-tag';
   titleTag.innerHTML = `<span class="equation-shape-icon">${getShapeIcon(shape.type)}</span><span>${eqData.title}</span>`;
 
+  if (eqData.isSideways) {
+    const orientBadge = document.createElement('span');
+    orientBadge.className = 'fit-orient-badge';
+    orientBadge.textContent = 'x = g(y)';
+    titleTag.appendChild(orientBadge);
+  }
+
   if (isPreview) {
     const previewBadge = document.createElement('span');
     previewBadge.className = 'badge';
@@ -812,7 +819,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       loadingBox.className = 'fit-loading-box';
       loadingBox.innerHTML = `
         <div class="fit-spinner"></div>
-        <span>Fitting polynomial & absolute value function curves (NumPy/SciPy)...</span>
+        <span>Fitting function curve families (Linear, Quadratic, Cubic, Abs, Sine)...</span>
       `;
       card.appendChild(loadingBox);
     } else if (shape.fitStatus === 'error') {
@@ -822,7 +829,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       errBox.style.backgroundColor = 'rgba(239, 68, 68, 0.08)';
       errBox.style.color = '#fca5a5';
       errBox.innerHTML = `
-        <div style="font-weight: 600; margin-bottom: 0.25rem;">⚠️ Fitting Backend Offline</div>
+        <div style="font-weight: 600; margin-bottom: 0.25rem;">⚠️ Fitting Service Notice</div>
         <div style="font-size: 0.8rem; line-height: 1.4;">${shape.fitError || 'Cannot connect to Python FastAPI backend at http://127.0.0.1:8001.'}</div>
       `;
       const retryBtn = document.createElement('button');
@@ -840,25 +847,36 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
     } else if (shape.fitStatus === 'rejected') {
       const rejBox = document.createElement('div');
       rejBox.className = 'fit-rejection-box';
+      const isParam = !!shape.fitData?.is_parametric_needed;
       const reason = shape.fitData?.rejection_reason || shape.fitData?.message || 'Curve could not be approximated by supported function families.';
       rejBox.innerHTML = `
         <div style="font-weight: 600; margin-bottom: 0.25rem;">ℹ️ Curve Not Fitted</div>
         <div style="font-size: 0.8rem; line-height: 1.4;">${reason}</div>
       `;
-      const retryBtn = document.createElement('button');
-      retryBtn.type = 'button';
-      retryBtn.className = 'btn-fit';
-      retryBtn.style.marginTop = '0.5rem';
-      retryBtn.style.padding = '0.35rem 0.75rem';
-      retryBtn.textContent = '🔄 Try Again';
-      retryBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        fitFreehandStroke(shape);
-      });
-      rejBox.appendChild(retryBtn);
+      if (!isParam) {
+        const retryBtn = document.createElement('button');
+        retryBtn.type = 'button';
+        retryBtn.className = 'btn-fit';
+        retryBtn.style.marginTop = '0.5rem';
+        retryBtn.style.padding = '0.35rem 0.75rem';
+        retryBtn.textContent = '🔄 Try Again';
+        retryBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          fitFreehandStroke(shape);
+        });
+        rejBox.appendChild(retryBtn);
+      }
       card.appendChild(rejBox);
     } else if (eqData.isFitted) {
-      // Candidate pills
+      // Poor Fit Warning Banner if forced or inadequate
+      if (eqData.isPoorFit) {
+        const warnBox = document.createElement('div');
+        warnBox.className = 'fit-warning-box';
+        warnBox.innerHTML = `<span>⚠️</span><span>${eqData.warning || 'Poor fit: Model does not adequately match stroke geometry.'}</span>`;
+        card.appendChild(warnBox);
+      }
+
+      // Candidate selector pills
       if (eqData.candidates && eqData.candidates.length > 1) {
         const candContainer = document.createElement('div');
         candContainer.className = 'fit-candidates-container';
@@ -867,7 +885,9 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
           pill.type = 'button';
           pill.className = `fit-candidate-pill ${idx === eqData.candidateIndex ? 'active' : ''}`;
           const isTop = idx === 0 ? '★ ' : '';
-          pill.innerHTML = `<span>${isTop}${cand.family_name}</span> <span class="fit-rmse-tag">RMSE: ${cand.rmse.toFixed(3)}</span>`;
+          const orientTag = cand.orientation === 'x_of_y' ? ' [x=g(y)]' : '';
+          const errVal = cand.geom_error !== undefined ? cand.geom_error : cand.rmse;
+          pill.innerHTML = `<span>${isTop}${cand.family_name}${orientTag}</span> <span class="fit-rmse-tag">Err: ${errVal.toFixed(3)}</span>`;
           pill.addEventListener('click', (e) => {
             e.stopPropagation();
             shape.selectedCandidateIndex = idx;
@@ -890,7 +910,9 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
 
       const statsDiv = document.createElement('div');
       statsDiv.className = 'equation-details-sub';
-      statsDiv.innerHTML = `<span>Family: <strong>${eqData.familyName}</strong></span> <span>RMSE: <strong>${eqData.rmse.toFixed(4)}</strong></span> <span>Domain: <strong>[${eqData.domain[0].toFixed(2)}, ${eqData.domain[1].toFixed(2)}]</strong></span>`;
+      const errVal = eqData.geomError !== undefined ? eqData.geomError : eqData.rmse;
+      const orientText = eqData.isSideways ? 'x = g(y)' : 'y = f(x)';
+      statsDiv.innerHTML = `<span>Family: <strong>${eqData.familyName}</strong> (${orientText})</span> <span>R²: <strong>${eqData.rSquared.toFixed(3)}</strong></span> <span>2D Error: <strong>${errVal.toFixed(3)}</strong></span>`;
       mathBox.appendChild(statsDiv);
       card.appendChild(mathBox);
 
@@ -911,6 +933,18 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       });
       actionRow.appendChild(overlayBtn);
 
+      const famSelect = document.createElement('select');
+      famSelect.className = 'fit-family-select';
+      famSelect.title = 'Select a specific curve family to fit';
+      famSelect.innerHTML = `
+        <option value="">Auto Best Fit</option>
+        <option value="linear">Linear</option>
+        <option value="quadratic">Quadratic</option>
+        <option value="cubic">Cubic</option>
+        <option value="absolute_value">Absolute Value</option>
+        <option value="sine">Sine Wave</option>
+      `;
+
       const refitBtn = document.createElement('button');
       refitBtn.type = 'button';
       refitBtn.className = 'btn-fit';
@@ -919,10 +953,12 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       refitBtn.textContent = '🔄 Refit';
       refitBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        fitFreehandStroke(shape);
+        const chosen = famSelect.value || null;
+        fitFreehandStroke(shape, chosen);
       });
-      actionRow.appendChild(refitBtn);
 
+      actionRow.appendChild(famSelect);
+      actionRow.appendChild(refitBtn);
       card.appendChild(actionRow);
     } else {
       // Unfitted initial state
@@ -930,7 +966,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       freehandBox.className = 'equation-math-box';
       freehandBox.style.fontSize = '0.825rem';
       freehandBox.style.color = '#94a3b8';
-      freehandBox.textContent = 'Freehand function curve. Click "Fit Equation" to find the closest matching mathematical model (Linear, Quadratic, Cubic, or Absolute Value).';
+      freehandBox.textContent = 'Freehand curve drawn. Click "Fit Curve Equation" to discover the best mathematical model (Linear, Quadratic, Cubic, Absolute Value, or Sine Wave).';
       card.appendChild(freehandBox);
 
       const actionRow = document.createElement('div');
@@ -1079,14 +1115,15 @@ function updateEquationsUI() {
 /**
  * Milestone 4: Performs asynchronous curve fitting via the FastAPI Python backend.
  */
-async function fitFreehandStroke(shape) {
+async function fitFreehandStroke(shape, requestedFamily = null) {
   if (!shape || shape.type !== 'freehand') return;
   const pts = shape.geometry?.points || shape.rawPoints;
   if (!pts || pts.length < 3) {
     shape.fitStatus = 'rejected';
     shape.fitData = {
       success: false,
-      rejection_reason: 'Stroke contains too few distinct points to fit an equation.'
+      rejection_reason: 'Stroke contains too few distinct points to fit an equation.',
+      is_parametric_needed: false
     };
     updateEquationsUI();
     refreshPropertiesInputsIfSelected(shape.id);
@@ -1103,10 +1140,16 @@ async function fitFreehandStroke(shape) {
   refreshPropertiesInputsIfSelected(shape.id);
   render();
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, 6000);
+
   try {
     const payload = {
       points: pts.map(p => ({ x: Number(p.x), y: Number(p.y) })),
-      allowed_families: ['linear', 'quadratic', 'cubic', 'absolute_value']
+      families: requestedFamily ? [requestedFamily] : ['linear', 'quadratic', 'cubic', 'absolute_value', 'sine'],
+      stroke_id: shape.id
     };
 
     const response = await fetch(BACKEND_FIT_URL, {
@@ -1114,8 +1157,11 @@ async function fitFreehandStroke(shape) {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errJson = await response.json().catch(() => ({}));
@@ -1140,14 +1186,19 @@ async function fitFreehandStroke(shape) {
       shape.fitData = data;
     }
   } catch (err) {
+    clearTimeout(timeoutId);
     if (shape.fitRequestId !== thisRequestId || !shapes.includes(shape)) {
       return;
     }
     console.error('Fit curve error:', err);
     shape.fitStatus = 'error';
-    shape.fitError = (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')))
-      ? 'Cannot connect to Python FastAPI backend at http://127.0.0.1:8001. Please make sure the backend is running.'
-      : err.message;
+    if (err.name === 'AbortError') {
+      shape.fitError = 'Fitting request timed out after 6 seconds. The backend may be busy or offline.';
+    } else if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))) {
+      shape.fitError = 'Cannot connect to Python FastAPI backend at http://127.0.0.1:8001. Please make sure the backend is running.';
+    } else {
+      shape.fitError = err.message || 'An error occurred during equation fitting.';
+    }
   } finally {
     updateEquationsUI();
     refreshPropertiesInputsIfSelected(shape.id);
@@ -1272,18 +1323,20 @@ function renderShapePropertiesUI(shape) {
         </div>
       `;
     } else if (shape.fitStatus === 'rejected') {
+      const isParam = !!shape.fitData?.is_parametric_needed;
       const reason = shape.fitData?.rejection_reason || 'Curve could not be approximated by supported function families.';
+      const retryBtnHtml = isParam ? '' : `<button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.5rem; padding: 0.35rem 0.75rem;">🔄 Try Again</button>`;
       fitSectionHtml = `
         <div class="fit-rejection-box" style="margin-top: 0.75rem;">
           <div style="font-weight: 600; margin-bottom: 0.25rem;">ℹ️ Curve Not Fitted</div>
           <div style="font-size: 0.8rem; line-height: 1.4;">${reason}</div>
-          <button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.5rem; padding: 0.35rem 0.75rem;">🔄 Try Again</button>
+          ${retryBtnHtml}
         </div>
       `;
     } else if (shape.fitStatus === 'error') {
       fitSectionHtml = `
         <div class="fit-rejection-box" style="margin-top: 0.75rem; border-color: rgba(239, 68, 68, 0.4); background-color: rgba(239, 68, 68, 0.08); color: #fca5a5;">
-          <div style="font-weight: 600; margin-bottom: 0.25rem;">⚠️ Backend Service Offline</div>
+          <div style="font-weight: 600; margin-bottom: 0.25rem;">⚠️ Fitting Service Notice</div>
           <div style="font-size: 0.8rem; line-height: 1.4;">${shape.fitError || 'Ensure Python backend is running on port 8001.'}</div>
           <button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.5rem; padding: 0.35rem 0.75rem;">🔄 Retry Connection</button>
         </div>
@@ -1306,23 +1359,37 @@ function renderShapePropertiesUI(shape) {
           <div style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
             <label class="property-label">Candidate Family:</label>
             <div class="fit-candidates-container" style="margin-top: 0.25rem;">
-              ${candidates.map((c, i) => `
+              ${candidates.map((c, i) => {
+                const orientTag = c.orientation === 'x_of_y' ? ' [x=g(y)]' : '';
+                const errVal = c.geom_error !== undefined ? c.geom_error : c.rmse;
+                return `
                 <button type="button" class="fit-candidate-pill ${i === selectedIdx ? 'active' : ''}" data-cand-idx="${i}">
-                  <span>${i === 0 ? '★ ' : ''}${c.family_name}</span>
-                  <span class="fit-rmse-tag">RMSE: ${c.rmse.toFixed(3)}</span>
+                  <span>${i === 0 ? '★ ' : ''}${c.family_name}${orientTag}</span>
+                  <span class="fit-rmse-tag">Err: ${errVal.toFixed(3)}</span>
                 </button>
-              `).join('')}
+              `;}).join('')}
             </div>
           </div>
         `;
       }
 
+      const warnHtml = activeCand.is_poor_fit ? `
+        <div class="fit-warning-box">
+          <span>⚠️</span><span>${activeCand.warning || 'Poor fit: Model does not match stroke geometry well.'}</span>
+        </div>
+      ` : '';
+
+      const errVal = activeCand.geom_error !== undefined ? activeCand.geom_error : activeCand.rmse;
+      const orientLabel = activeCand.orientation === 'x_of_y' ? 'x = g(y) (Sideways)' : 'y = f(x)';
+
       fitSectionHtml = `
         <div class="fit-card-section" style="margin-top: 0.75rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
             <span style="font-size: 0.85rem; font-weight: 600; color: #38bdf8;">✨ Fitted Model: ${activeCand.family_name}</span>
-            <span class="fit-rmse-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">RMSE: ${activeCand.rmse.toFixed(4)}</span>
+            <span class="fit-rmse-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">2D Error: ${errVal.toFixed(4)}</span>
           </div>
+          <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.35rem;">Orientation: <strong>${orientLabel}</strong> | R²: <strong>${activeCand.r_squared.toFixed(3)}</strong></div>
+          ${warnHtml}
           ${candPillsHtml}
           <div class="properties-grid" style="margin-top: 0.5rem;">
             ${paramsHtml}
@@ -1331,6 +1398,14 @@ function renderShapePropertiesUI(shape) {
             <button type="button" class="btn-toggle-overlay ${shape.showOverlay !== false ? 'active' : ''}" id="prop-toggle-overlay-btn">
               ${shape.showOverlay !== false ? '👁️ Overlay: Visible' : '👁️ Overlay: Hidden'}
             </button>
+            <select class="fit-family-select" id="prop-family-select" title="Refit with specific family">
+              <option value="">Auto Best Fit</option>
+              <option value="linear">Linear</option>
+              <option value="quadratic">Quadratic</option>
+              <option value="cubic">Cubic</option>
+              <option value="absolute_value">Absolute Value</option>
+              <option value="sine">Sine Wave</option>
+            </select>
             <button type="button" class="btn-fit" id="prop-refit-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;">🔄 Refit</button>
           </div>
         </div>
@@ -1363,7 +1438,13 @@ function renderShapePropertiesUI(shape) {
     if (fitBtn) fitBtn.addEventListener('click', () => fitFreehandStroke(shape));
 
     const refitBtn = document.getElementById('prop-refit-btn');
-    if (refitBtn) refitBtn.addEventListener('click', () => fitFreehandStroke(shape));
+    if (refitBtn) {
+      refitBtn.addEventListener('click', () => {
+        const sel = document.getElementById('prop-family-select');
+        const chosen = sel ? (sel.value || null) : null;
+        fitFreehandStroke(shape, chosen);
+      });
+    }
 
     const toggleOverlayBtn = document.getElementById('prop-toggle-overlay-btn');
     if (toggleOverlayBtn) {

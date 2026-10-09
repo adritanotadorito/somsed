@@ -492,6 +492,8 @@ function deriveShapeEquations(shape, decimals = 2) {
           ? shape.selectedCandidateIndex
           : 0;
         const cand = shape.fitData.candidates[candidateIndex];
+        const isSideways = (cand.orientation === 'x_of_y');
+        const orientLabel = isSideways ? 'x = g(y)' : 'y = f(x)';
         return {
           shapeId: shape.id,
           shapeType: 'freehand',
@@ -501,17 +503,23 @@ function deriveShapeEquations(shape, decimals = 2) {
           candidateIndex,
           candidate: cand,
           candidates: shape.fitData.candidates,
+          orientation: cand.orientation || 'y_of_x',
+          isSideways: isSideways,
           primaryEquation: cand.latex || cand.latex_with_domain || '',
           primaryText: cand.text || cand.text_with_domain || '',
           latexWithoutDomain: cand.latex_without_domain || cand.latex || '',
           textWithoutDomain: cand.text_without_domain || cand.text || '',
           domain: cand.domain,
           rmse: cand.rmse,
+          geomError: cand.geom_error ?? cand.rmse,
+          rSquared: cand.r_squared ?? 0,
+          isPoorFit: !!cand.is_poor_fit,
+          warning: cand.warning || null,
           score: cand.score,
           parameters: cand.params || cand.parameters || {},
           plottingSamples: cand.plot_points || cand.plotting_samples || [],
           familyName: cand.family_name,
-          detailsLatex: `\\text{Family: } ${cand.family_name} \\quad | \\quad \\text{RMSE: } ${cand.rmse.toFixed(3)}`
+          detailsLatex: `\\text{Family: } ${cand.family_name} \\; (${orientLabel}) \\quad | \\quad \\text{Error: } ${(cand.geom_error ?? cand.rmse).toFixed(3)}`
         };
       }
       return {
@@ -520,7 +528,7 @@ function deriveShapeEquations(shape, decimals = 2) {
         title: customTitle || `Freehand Stroke ${shape.id || ''}`,
         isFreehand: true,
         isFitted: false,
-        note: 'Freehand stroke. Click "Fit Equation" to fit approximate polynomial or absolute value functions.'
+        note: 'Freehand stroke. Click "Fit Equation" to approximate with mathematical models (Linear, Quadratic, Cubic, Absolute Value, Sine).'
       };
     }
   }

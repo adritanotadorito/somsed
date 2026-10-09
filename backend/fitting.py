@@ -2,6 +2,7 @@ import numpy as np
 from scipy.optimize import minimize_scalar
 from typing import List, Dict, Tuple, Optional
 from models import FitCandidate, Point
+import time
 
 def format_coeff(val: float, decimals: int = 2) -> str:
     """Formats a float cleanly for equation display."""
@@ -12,29 +13,32 @@ def format_coeff(val: float, decimals: int = 2) -> str:
         return "0"
     if rounded == int(rounded):
         return str(int(rounded))
-    # Format with up to `decimals` places, stripping trailing zeros
     s = f"{rounded:.{decimals}f}".rstrip('0').rstrip('.')
     return s
 
-def format_linear_equation(m: float, b: float, domain: Tuple[float, float], decimals: int = 2) -> Tuple[str, str]:
-    x_min_s = format_coeff(domain[0], decimals)
-    x_max_s = format_coeff(domain[1], decimals)
-    dom_latex = f"\\quad \\left\\{{ {x_min_s} \\le x \\le {x_max_s} \\right\\}}"
-    dom_text = f"  {{{x_min_s} <= x <= {x_max_s}}}"
+def format_domain(domain: Tuple[float, float], indep_var: str = "x", decimals: int = 2) -> Tuple[str, str]:
+    u_min_s = format_coeff(domain[0], decimals)
+    u_max_s = format_coeff(domain[1], decimals)
+    dom_latex = f"\\quad \\left\\{{ {u_min_s} \\le {indep_var} \\le {u_max_s} \\right\\}}"
+    dom_text = f"  {{{u_min_s} <= {indep_var} <= {u_max_s}}}"
+    return dom_latex, dom_text
+
+def format_linear_equation(m: float, b: float, domain: Tuple[float, float], orientation: str = "y_of_x", decimals: int = 2) -> Tuple[str, str]:
+    dep_var = "y" if orientation == "y_of_x" else "x"
+    indep_var = "x" if orientation == "y_of_x" else "y"
+    dom_latex, dom_text = format_domain(domain, indep_var, decimals)
 
     if abs(m) < 1e-4:
         b_s = format_coeff(b, decimals)
-        return f"y = {b_s}{dom_latex}", f"y = {b_s}{dom_text}"
+        return f"{dep_var} = {b_s}{dom_latex}", f"{dep_var} = {b_s}{dom_text}"
 
-    # m string
     if abs(m - 1.0) < 1e-4:
-        m_s = "x"
+        m_s = indep_var
     elif abs(m - (-1.0)) < 1e-4:
-        m_s = "-x"
+        m_s = f"-{indep_var}"
     else:
-        m_s = f"{format_coeff(m, decimals)}x"
+        m_s = f"{format_coeff(m, decimals)}{indep_var}"
 
-    # b string
     b_formatted = format_coeff(abs(b), decimals)
     if b_formatted == "0":
         b_s = ""
@@ -44,42 +48,38 @@ def format_linear_equation(m: float, b: float, domain: Tuple[float, float], deci
         b_s = f" - {b_formatted}"
 
     expr = f"{m_s}{b_s}"
-    return f"y = {expr}{dom_latex}", f"y = {expr}{dom_text}"
+    return f"{dep_var} = {expr}{dom_latex}", f"{dep_var} = {expr}{dom_text}"
 
-def format_quadratic_equation(a: float, b: float, c: float, domain: Tuple[float, float], decimals: int = 2) -> Tuple[str, str]:
-    x_min_s = format_coeff(domain[0], decimals)
-    x_max_s = format_coeff(domain[1], decimals)
-    dom_latex = f"\\quad \\left\\{{ {x_min_s} \\le x \\le {x_max_s} \\right\\}}"
-    dom_text = f"  {{{x_min_s} <= x <= {x_max_s}}}"
+def format_quadratic_equation(a: float, b: float, c: float, domain: Tuple[float, float], orientation: str = "y_of_x", decimals: int = 2) -> Tuple[str, str]:
+    dep_var = "y" if orientation == "y_of_x" else "x"
+    indep_var = "x" if orientation == "y_of_x" else "y"
+    dom_latex, dom_text = format_domain(domain, indep_var, decimals)
 
     terms_latex = []
     terms_text = []
 
-    # a x^2
     a_val = format_coeff(a, decimals)
     if a_val != "0":
         if abs(a - 1.0) < 1e-4:
-            terms_latex.append("x^2")
-            terms_text.append("x²")
+            terms_latex.append(f"{indep_var}^2")
+            terms_text.append(f"{indep_var}²")
         elif abs(a - (-1.0)) < 1e-4:
-            terms_latex.append("-x^2")
-            terms_text.append("-x²")
+            terms_latex.append(f"-{indep_var}^2")
+            terms_text.append(f"-{indep_var}²")
         else:
-            terms_latex.append(f"{a_val}x^2")
-            terms_text.append(f"{a_val}x²")
+            terms_latex.append(f"{a_val}{indep_var}^2")
+            terms_text.append(f"{a_val}{indep_var}²")
 
-    # b x
     b_val = format_coeff(abs(b), decimals)
     if b_val != "0":
         prefix = " + " if (terms_latex and b > 0) else (" - " if (terms_latex and b < 0) else ("-" if b < 0 else ""))
         if abs(abs(b) - 1.0) < 1e-4:
-            terms_latex.append(f"{prefix}x")
-            terms_text.append(f"{prefix}x")
+            terms_latex.append(f"{prefix}{indep_var}")
+            terms_text.append(f"{prefix}{indep_var}")
         else:
-            terms_latex.append(f"{prefix}{b_val}x")
-            terms_text.append(f"{prefix}{b_val}x")
+            terms_latex.append(f"{prefix}{b_val}{indep_var}")
+            terms_text.append(f"{prefix}{b_val}{indep_var}")
 
-    # c
     c_val = format_coeff(abs(c), decimals)
     if c_val != "0" or not terms_latex:
         prefix = " + " if (terms_latex and c > 0) else (" - " if (terms_latex and c < 0) else ("-" if c < 0 else ""))
@@ -88,53 +88,48 @@ def format_quadratic_equation(a: float, b: float, c: float, domain: Tuple[float,
 
     expr_latex = "".join(terms_latex) or "0"
     expr_text = "".join(terms_text) or "0"
-    return f"y = {expr_latex}{dom_latex}", f"y = {expr_text}{dom_text}"
+    return f"{dep_var} = {expr_latex}{dom_latex}", f"{dep_var} = {expr_text}{dom_text}"
 
-def format_cubic_equation(a: float, b: float, c: float, d: float, domain: Tuple[float, float], decimals: int = 2) -> Tuple[str, str]:
-    x_min_s = format_coeff(domain[0], decimals)
-    x_max_s = format_coeff(domain[1], decimals)
-    dom_latex = f"\\quad \\left\\{{ {x_min_s} \\le x \\le {x_max_s} \\right\\}}"
-    dom_text = f"  {{{x_min_s} <= x <= {x_max_s}}}"
+def format_cubic_equation(a: float, b: float, c: float, d: float, domain: Tuple[float, float], orientation: str = "y_of_x", decimals: int = 2) -> Tuple[str, str]:
+    dep_var = "y" if orientation == "y_of_x" else "x"
+    indep_var = "x" if orientation == "y_of_x" else "y"
+    dom_latex, dom_text = format_domain(domain, indep_var, decimals)
 
     terms_latex = []
     terms_text = []
 
-    # a x^3
     a_val = format_coeff(a, decimals)
     if a_val != "0":
         if abs(a - 1.0) < 1e-4:
-            terms_latex.append("x^3")
-            terms_text.append("x³")
+            terms_latex.append(f"{indep_var}^3")
+            terms_text.append(f"{indep_var}³")
         elif abs(a - (-1.0)) < 1e-4:
-            terms_latex.append("-x^3")
-            terms_text.append("-x³")
+            terms_latex.append(f"-{indep_var}^3")
+            terms_text.append(f"-{indep_var}³")
         else:
-            terms_latex.append(f"{a_val}x^3")
-            terms_text.append(f"{a_val}x³")
+            terms_latex.append(f"{a_val}{indep_var}^3")
+            terms_text.append(f"{a_val}{indep_var}³")
 
-    # b x^2
     b_val = format_coeff(abs(b), decimals)
     if b_val != "0":
         prefix = " + " if (terms_latex and b > 0) else (" - " if (terms_latex and b < 0) else ("-" if b < 0 else ""))
         if abs(abs(b) - 1.0) < 1e-4:
-            terms_latex.append(f"{prefix}x^2")
-            terms_text.append(f"{prefix}x²")
+            terms_latex.append(f"{prefix}{indep_var}^2")
+            terms_text.append(f"{prefix}{indep_var}²")
         else:
-            terms_latex.append(f"{prefix}{b_val}x^2")
-            terms_text.append(f"{prefix}{b_val}x²")
+            terms_latex.append(f"{prefix}{b_val}{indep_var}^2")
+            terms_text.append(f"{prefix}{b_val}{indep_var}²")
 
-    # c x
     c_val = format_coeff(abs(c), decimals)
     if c_val != "0":
         prefix = " + " if (terms_latex and c > 0) else (" - " if (terms_latex and c < 0) else ("-" if c < 0 else ""))
         if abs(abs(c) - 1.0) < 1e-4:
-            terms_latex.append(f"{prefix}x")
-            terms_text.append(f"{prefix}x")
+            terms_latex.append(f"{prefix}{indep_var}")
+            terms_text.append(f"{prefix}{indep_var}")
         else:
-            terms_latex.append(f"{prefix}{c_val}x")
-            terms_text.append(f"{prefix}{c_val}x")
+            terms_latex.append(f"{prefix}{c_val}{indep_var}")
+            terms_text.append(f"{prefix}{c_val}{indep_var}")
 
-    # d
     d_val = format_coeff(abs(d), decimals)
     if d_val != "0" or not terms_latex:
         prefix = " + " if (terms_latex and d > 0) else (" - " if (terms_latex and d < 0) else ("-" if d < 0 else ""))
@@ -143,15 +138,13 @@ def format_cubic_equation(a: float, b: float, c: float, d: float, domain: Tuple[
 
     expr_latex = "".join(terms_latex) or "0"
     expr_text = "".join(terms_text) or "0"
-    return f"y = {expr_latex}{dom_latex}", f"y = {expr_text}{dom_text}"
+    return f"{dep_var} = {expr_latex}{dom_latex}", f"{dep_var} = {expr_text}{dom_text}"
 
-def format_abs_equation(a: float, h: float, k: float, domain: Tuple[float, float], decimals: int = 2) -> Tuple[str, str]:
-    x_min_s = format_coeff(domain[0], decimals)
-    x_max_s = format_coeff(domain[1], decimals)
-    dom_latex = f"\\quad \\left\\{{ {x_min_s} \\le x \\le {x_max_s} \\right\\}}"
-    dom_text = f"  {{{x_min_s} <= x <= {x_max_s}}}"
+def format_abs_equation(a: float, h: float, k: float, domain: Tuple[float, float], orientation: str = "y_of_x", decimals: int = 2) -> Tuple[str, str]:
+    dep_var = "y" if orientation == "y_of_x" else "x"
+    indep_var = "x" if orientation == "y_of_x" else "y"
+    dom_latex, dom_text = format_domain(domain, indep_var, decimals)
 
-    # a factor
     if abs(a - 1.0) < 1e-4:
         a_s = ""
     elif abs(a - (-1.0)) < 1e-4:
@@ -159,16 +152,14 @@ def format_abs_equation(a: float, h: float, k: float, domain: Tuple[float, float
     else:
         a_s = format_coeff(a, decimals)
 
-    # (x - h)
     h_formatted = format_coeff(abs(h), decimals)
     if h_formatted == "0":
-        inner = "x"
+        inner = indep_var
     elif h > 0:
-        inner = f"x - {h_formatted}"
+        inner = f"{indep_var} - {h_formatted}"
     else:
-        inner = f"x + {h_formatted}"
+        inner = f"{indep_var} + {h_formatted}"
 
-    # k
     k_formatted = format_coeff(abs(k), decimals)
     if k_formatted == "0":
         k_s = ""
@@ -177,29 +168,137 @@ def format_abs_equation(a: float, h: float, k: float, domain: Tuple[float, float
     else:
         k_s = f" - {k_formatted}"
 
-    latex = f"y = {a_s}\\left|{inner}\\right|{k_s}{dom_latex}"
-    text = f"y = {a_s}|{inner}|{k_s}{dom_text}"
+    latex = f"{dep_var} = {a_s}\\left|{inner}\\right|{k_s}{dom_latex}"
+    text = f"{dep_var} = {a_s}|{inner}|{k_s}{dom_text}"
     return latex, text
 
-def fit_linear(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float]) -> FitCandidate:
-    # Normalized least squares for stability
-    mu_x = float(np.mean(x))
-    sigma_x = float(np.std(x)) or 1.0
-    u = (x - mu_x) / sigma_x
+def format_sine_equation(A: float, B: float, C: float, D: float, domain: Tuple[float, float], orientation: str = "y_of_x", decimals: int = 2) -> Tuple[str, str]:
+    dep_var = "y" if orientation == "y_of_x" else "x"
+    indep_var = "x" if orientation == "y_of_x" else "y"
+    dom_latex, dom_text = format_domain(domain, indep_var, decimals)
 
-    c1, c0 = np.polyfit(u, y, deg=1)
-    m = float(c1 / sigma_x)
-    b = float(c0 - (c1 * mu_x / sigma_x))
+    if A < 0:
+        A = -A
+        C = C + np.pi
 
-    y_pred = m * x + b
-    rmse = float(np.sqrt(np.mean((y - y_pred) ** 2)))
+    C = (C + np.pi) % (2.0 * np.pi) - np.pi
+    if abs(C + np.pi) < 1e-4:
+        C = np.pi
 
-    latex, text = format_linear_equation(m, b, domain)
+    if abs(A - 1.0) < 1e-4:
+        A_s = ""
+    else:
+        A_s = format_coeff(A, decimals)
 
-    # Sample 80 smooth points in drawn domain
-    xs = np.linspace(domain[0], domain[1], 80)
-    ys = m * xs + b
-    plot_pts = [Point(x=round(float(px), 4), y=round(float(py), 4)) for px, py in zip(xs, ys)]
+    if abs(B - 1.0) < 1e-4:
+        B_s = indep_var
+    else:
+        B_s = f"{format_coeff(B, decimals)}{indep_var}"
+
+    C_val = format_coeff(abs(C), decimals)
+    if C_val == "0":
+        inner_s = B_s
+    elif C > 0:
+        inner_s = f"{B_s} + {C_val}"
+    else:
+        inner_s = f"{B_s} - {C_val}"
+
+    D_val = format_coeff(abs(D), decimals)
+    if D_val == "0":
+        D_s = ""
+    elif D > 0:
+        D_s = f" + {D_val}"
+    else:
+        D_s = f" - {D_val}"
+
+    latex = f"{dep_var} = {A_s}\\sin\\left({inner_s}\\right){D_s}{dom_latex}"
+    text = f"{dep_var} = {A_s} sin({inner_s}){D_s}{dom_text}"
+    return latex, text
+
+# ==========================================
+# 2D GEOMETRIC DISTANCE METRIC IN GRAPH SPACE
+# ==========================================
+
+def compute_geometric_error(stroke_pts: np.ndarray, curve_pts: List[Point]) -> float:
+    """
+    Computes common 2D Euclidean point-to-curve RMS distance in graph space.
+    This provides an isotropic, orientation-independent error metric.
+    """
+    if not curve_pts or len(curve_pts) < 2 or len(stroke_pts) == 0:
+        return float('inf')
+
+    c_arr = np.array([[p.x, p.y] for p in curve_pts], dtype=np.float64)
+    p1 = c_arr[:-1]  # (M-1, 2)
+    p2 = c_arr[1:]   # (M-1, 2)
+    seg_vec = p2 - p1  # (M-1, 2)
+    seg_len_sq = np.sum(seg_vec ** 2, axis=1)  # (M-1,)
+    seg_len_sq = np.maximum(seg_len_sq, 1e-8)
+
+    # For each stroke point, find distance to each segment
+    pts = stroke_pts[:, np.newaxis, :]  # (N, 1, 2)
+    v_vec = pts - p1[np.newaxis, :, :]  # (N, M-1, 2)
+
+    t = np.sum(v_vec * seg_vec[np.newaxis, :, :], axis=2) / seg_len_sq[np.newaxis, :]
+    t = np.clip(t, 0.0, 1.0)  # (N, M-1)
+
+    proj = p1[np.newaxis, :, :] + t[:, :, np.newaxis] * seg_vec[np.newaxis, :, :]
+    dists_sq = np.sum((pts - proj) ** 2, axis=2)  # (N, M-1)
+    min_dists_sq = np.min(dists_sq, axis=1)  # (N,)
+
+    return float(np.sqrt(np.mean(min_dists_sq)))
+
+def compute_residual_metrics(v_actual: np.ndarray, v_pred: np.ndarray) -> Tuple[float, float, float, int]:
+    residuals = v_actual - v_pred
+    rmse = float(np.sqrt(np.mean(residuals ** 2)))
+    ss_tot = float(np.sum((v_actual - np.mean(v_actual)) ** 2))
+    ss_res = float(np.sum(residuals ** 2))
+
+    if ss_tot < 1e-6:
+        r2 = 1.0 if rmse < 0.15 else 0.0
+    else:
+        r2 = float(max(0.0, 1.0 - (ss_res / ss_tot)))
+
+    if len(residuals) > 2 and ss_res > 1e-6:
+        r_mean = np.mean(residuals)
+        r_cent = residuals - r_mean
+        autocorr = float(np.sum(r_cent[:-1] * r_cent[1:]) / np.sum(r_cent ** 2))
+    else:
+        autocorr = 0.0
+
+    signs = np.sign(residuals)
+    sign_changes = int(np.sum(signs[:-1] * signs[1:] < 0))
+
+    return rmse, r2, autocorr, sign_changes
+
+def make_plot_points(u_vals: np.ndarray, v_vals: np.ndarray, orientation: str) -> List[Point]:
+    if orientation == "y_of_x":
+        return [Point(x=round(float(u), 4), y=round(float(v), 4)) for u, v in zip(u_vals, v_vals)]
+    else:
+        return [Point(x=round(float(v), 4), y=round(float(u), 4)) for u, v in zip(u_vals, v_vals)]
+
+# ==========================================
+# INDIVIDUAL FAMILY FITTERS
+# ==========================================
+
+def fit_linear(u: np.ndarray, v: np.ndarray, domain: Tuple[float, float], orientation: str, stroke_pts: np.ndarray) -> FitCandidate:
+    mu_u = float(np.mean(u))
+    sigma_u = float(np.std(u)) or 1.0
+    u_norm = (u - mu_u) / sigma_u
+
+    c1, c0 = np.polyfit(u_norm, v, deg=1)
+    m = float(c1 / sigma_u)
+    b = float(c0 - (c1 * mu_u / sigma_u))
+
+    v_pred = m * u + b
+    rmse, r2, autocorr, signs = compute_residual_metrics(v, v_pred)
+
+    us = np.linspace(domain[0], domain[1], 80)
+    vs = m * us + b
+    plot_pts = make_plot_points(us, vs, orientation)
+    geom_err = compute_geometric_error(stroke_pts, plot_pts)
+
+    latex, text = format_linear_equation(m, b, domain, orientation)
+    score = geom_err * 1.10
 
     return FitCandidate(
         family="linear",
@@ -208,32 +307,34 @@ def fit_linear(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float]) -> Fit
         latex=latex,
         text=text,
         domain=[domain[0], domain[1]],
+        orientation=orientation,
         rmse=round(rmse, 4),
-        score=rmse, # Base complexity score (k=2)
+        r_squared=round(r2, 4),
+        geom_error=round(geom_err, 4),
+        score=round(score, 4),
         plot_points=plot_pts
     )
 
-def fit_quadratic(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float]) -> FitCandidate:
-    mu_x = float(np.mean(x))
-    sigma_x = float(np.std(x)) or 1.0
-    u = (x - mu_x) / sigma_x
+def fit_quadratic(u: np.ndarray, v: np.ndarray, domain: Tuple[float, float], orientation: str, stroke_pts: np.ndarray) -> FitCandidate:
+    mu_u = float(np.mean(u))
+    sigma_u = float(np.std(u)) or 1.0
+    u_norm = (u - mu_u) / sigma_u
 
-    c2, c1, c0 = np.polyfit(u, y, deg=2)
-    a = float(c2 / (sigma_x ** 2))
-    b = float((c1 / sigma_x) - (2.0 * c2 * mu_x / (sigma_x ** 2)))
-    c = float(c0 - (c1 * mu_x / sigma_x) + (c2 * (mu_x ** 2) / (sigma_x ** 2)))
+    c2, c1, c0 = np.polyfit(u_norm, v, deg=2)
+    a = float(c2 / (sigma_u ** 2))
+    b = float((c1 / sigma_u) - (2.0 * c2 * mu_u / (sigma_u ** 2)))
+    c = float(c0 - (c1 * mu_u / sigma_u) + (c2 * (mu_u ** 2) / (sigma_u ** 2)))
 
-    y_pred = a * (x ** 2) + b * x + c
-    rmse = float(np.sqrt(np.mean((y - y_pred) ** 2)))
+    v_pred = a * (u ** 2) + b * u + c
+    rmse, r2, autocorr, signs = compute_residual_metrics(v, v_pred)
 
-    latex, text = format_quadratic_equation(a, b, c, domain)
+    us = np.linspace(domain[0], domain[1], 80)
+    vs = a * (us ** 2) + b * us + c
+    plot_pts = make_plot_points(us, vs, orientation)
+    geom_err = compute_geometric_error(stroke_pts, plot_pts)
 
-    xs = np.linspace(domain[0], domain[1], 80)
-    ys = a * (xs ** 2) + b * xs + c
-    plot_pts = [Point(x=round(float(px), 4), y=round(float(py), 4)) for px, py in zip(xs, ys)]
-
-    # Complexity penalty for 3 parameters
-    score = rmse * 1.08
+    latex, text = format_quadratic_equation(a, b, c, domain, orientation)
+    score = geom_err * 1.16
 
     return FitCandidate(
         family="quadratic",
@@ -242,35 +343,37 @@ def fit_quadratic(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float]) -> 
         latex=latex,
         text=text,
         domain=[domain[0], domain[1]],
+        orientation=orientation,
         rmse=round(rmse, 4),
+        r_squared=round(r2, 4),
+        geom_error=round(geom_err, 4),
         score=round(score, 4),
         plot_points=plot_pts
     )
 
-def fit_cubic(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float]) -> FitCandidate:
-    mu_x = float(np.mean(x))
-    sigma_x = float(np.std(x)) or 1.0
-    u = (x - mu_x) / sigma_x
+def fit_cubic(u: np.ndarray, v: np.ndarray, domain: Tuple[float, float], orientation: str, stroke_pts: np.ndarray) -> FitCandidate:
+    mu_u = float(np.mean(u))
+    sigma_u = float(np.std(u)) or 1.0
+    u_norm = (u - mu_u) / sigma_u
 
-    c3, c2, c1, c0 = np.polyfit(u, y, deg=3)
-    z = mu_x / sigma_x
+    c3, c2, c1, c0 = np.polyfit(u_norm, v, deg=3)
+    z = mu_u / sigma_u
 
-    a = float(c3 / (sigma_x ** 3))
-    b = float((c2 / (sigma_x ** 2)) - (3.0 * c3 * z / (sigma_x ** 2)))
-    c = float((c1 / sigma_x) - (2.0 * c2 * z / sigma_x) + (3.0 * c3 * (z ** 2) / sigma_x))
+    a = float(c3 / (sigma_u ** 3))
+    b = float((c2 / (sigma_u ** 2)) - (3.0 * c3 * z / (sigma_u ** 2)))
+    c = float((c1 / sigma_u) - (2.0 * c2 * z / sigma_u) + (3.0 * c3 * (z ** 2) / sigma_u))
     d = float(c0 - (c1 * z) + (c2 * (z ** 2)) - (c3 * (z ** 3)))
 
-    y_pred = a * (x ** 3) + b * (x ** 2) + c * x + d
-    rmse = float(np.sqrt(np.mean((y - y_pred) ** 2)))
+    v_pred = a * (u ** 3) + b * (u ** 2) + c * u + d
+    rmse, r2, autocorr, signs = compute_residual_metrics(v, v_pred)
 
-    latex, text = format_cubic_equation(a, b, c, d, domain)
+    us = np.linspace(domain[0], domain[1], 80)
+    vs = a * (us ** 3) + b * (us ** 2) + c * us + d
+    plot_pts = make_plot_points(us, vs, orientation)
+    geom_err = compute_geometric_error(stroke_pts, plot_pts)
 
-    xs = np.linspace(domain[0], domain[1], 80)
-    ys = a * (xs ** 3) + b * (xs ** 2) + c * xs + d
-    plot_pts = [Point(x=round(float(px), 4), y=round(float(py), 4)) for px, py in zip(xs, ys)]
-
-    # Complexity penalty for 4 parameters
-    score = rmse * 1.22
+    latex, text = format_cubic_equation(a, b, c, d, domain, orientation)
+    score = geom_err * 1.24
 
     return FitCandidate(
         family="cubic",
@@ -279,32 +382,29 @@ def fit_cubic(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float]) -> FitC
         latex=latex,
         text=text,
         domain=[domain[0], domain[1]],
+        orientation=orientation,
         rmse=round(rmse, 4),
+        r_squared=round(r2, 4),
+        geom_error=round(geom_err, 4),
         score=round(score, 4),
         plot_points=plot_pts
     )
 
-def fit_absolute_value(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float]) -> FitCandidate:
-    """
-    Fits y = a|x - h| + k by optimizing the non-differentiable corner h
-    using a multi-start grid + 1D bounded scalar minimization.
-    """
-    x_min, x_max = domain
-    span_x = x_max - x_min
-    search_min = x_min + 0.08 * span_x
-    search_max = x_max - 0.08 * span_x
+def fit_absolute_value(u: np.ndarray, v: np.ndarray, domain: Tuple[float, float], orientation: str, stroke_pts: np.ndarray) -> FitCandidate:
+    u_min, u_max = domain
+    span_u = max(1e-4, u_max - u_min)
+    search_min = u_min + 0.08 * span_u
+    search_max = u_max - 0.08 * span_u
 
     def solve_for_h(h_val: float) -> Tuple[float, float, float]:
-        # Design matrix: A = [|x - h|, 1]
-        A = np.column_stack((np.abs(x - h_val), np.ones_like(x)))
-        (a_val, k_val), residuals, _, _ = np.linalg.lstsq(A, y, rcond=None)
-        pred = a_val * np.abs(x - h_val) + k_val
-        err = np.sum((y - pred) ** 2)
-        return float(a_val), float(k_val), float(err)
+        A = np.column_stack((np.abs(u - h_val), np.ones_like(u)))
+        (a_val, k_val), _, _, _ = np.linalg.lstsq(A, v, rcond=None)
+        pred = a_val * np.abs(u - h_val) + k_val
+        err = float(np.sum((v - pred) ** 2))
+        return float(a_val), float(k_val), err
 
-    # 1. Multi-start grid search over 40 candidate corner locations
     candidate_hs = np.linspace(search_min, search_max, 40)
-    best_h = candidate_hs[0]
+    best_h = float(candidate_hs[0])
     best_err = float('inf')
     best_a, best_k = 0.0, 0.0
 
@@ -316,8 +416,7 @@ def fit_absolute_value(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float]
             best_a = a_cand
             best_k = k_cand
 
-    # 2. Refine h with scalar optimization
-    res = minimize_scalar(lambda h: solve_for_h(h)[2], bounds=(search_min, search_max), method='bounded')
+    res = minimize_scalar(lambda h: solve_for_h(h)[2], bounds=(search_min, search_max), method='bounded', options={'maxiter': 50, 'xatol': 1e-3})
     if res.success:
         refined_h = float(res.x)
         refined_a, refined_k, refined_err = solve_for_h(refined_h)
@@ -326,16 +425,16 @@ def fit_absolute_value(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float]
             best_a = refined_a
             best_k = refined_k
 
-    y_pred = best_a * np.abs(x - best_h) + best_k
-    rmse = float(np.sqrt(np.mean((y - y_pred) ** 2)))
+    v_pred = best_a * np.abs(u - best_h) + best_k
+    rmse, r2, autocorr, signs = compute_residual_metrics(v, v_pred)
 
-    latex, text = format_abs_equation(best_a, best_h, best_k, domain)
+    us = np.linspace(domain[0], domain[1], 80)
+    vs = best_a * np.abs(us - best_h) + best_k
+    plot_pts = make_plot_points(us, vs, orientation)
+    geom_err = compute_geometric_error(stroke_pts, plot_pts)
 
-    xs = np.linspace(domain[0], domain[1], 80)
-    ys = best_a * np.abs(xs - best_h) + best_k
-    plot_pts = [Point(x=round(float(px), 4), y=round(float(py), 4)) for px, py in zip(xs, ys)]
-
-    score = rmse * 1.10
+    latex, text = format_abs_equation(best_a, best_h, best_k, domain, orientation)
+    score = geom_err * 1.18
 
     return FitCandidate(
         family="absolute_value",
@@ -344,71 +443,236 @@ def fit_absolute_value(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float]
         latex=latex,
         text=text,
         domain=[domain[0], domain[1]],
+        orientation=orientation,
         rmse=round(rmse, 4),
+        r_squared=round(r2, 4),
+        geom_error=round(geom_err, 4),
         score=round(score, 4),
         plot_points=plot_pts
     )
 
-def fit_all_families(x: np.ndarray, y: np.ndarray, domain: Tuple[float, float], requested_families: Optional[List[str]] = None) -> Tuple[bool, List[FitCandidate], Optional[str]]:
+def fit_sine(u: np.ndarray, v: np.ndarray, domain: Tuple[float, float], orientation: str, stroke_pts: np.ndarray) -> FitCandidate:
+    u_min, u_max = domain
+    span_u = max(1e-4, u_max - u_min)
+
+    b_min = float(2.0 * np.pi * 0.6 / span_u)
+    b_max = float(min(2.0 * np.pi * 8.0 / span_u, 25.0))
+
+    def solve_linear_sine(b_val: float) -> Tuple[float, float, float, float, float]:
+        M = np.column_stack((np.sin(b_val * u), np.cos(b_val * u), np.ones_like(u)))
+        (alpha, beta, D), _, _, _ = np.linalg.lstsq(M, v, rcond=None)
+        A = float(np.hypot(alpha, beta))
+        C = float(np.arctan2(beta, alpha))
+        pred = alpha * np.sin(b_val * u) + beta * np.cos(b_val * u) + D
+        err = float(np.sum((v - pred) ** 2))
+        return A, float(b_val), C, float(D), err
+
+    b_grid = np.linspace(b_min, b_max, 60)
+    best_err = float('inf')
+    best_A, best_B, best_C, best_D = 1.0, b_min, 0.0, 0.0
+
+    for b_cand in b_grid:
+        A, B, C, D, err = solve_linear_sine(b_cand)
+        if err < best_err:
+            best_err = err
+            best_A, best_B, best_C, best_D = A, B, C, D
+
+    b_bracket_min = max(b_min, best_B - (b_max - b_min) / 30.0)
+    b_bracket_max = min(b_max, best_B + (b_max - b_min) / 30.0)
+    res = minimize_scalar(lambda b: solve_linear_sine(b)[4], bounds=(b_bracket_min, b_bracket_max), method='bounded', options={'maxiter': 40, 'xatol': 1e-3})
+    if res.success:
+        refined_b = float(res.x)
+        A, B, C, D, err = solve_linear_sine(refined_b)
+        if err < best_err:
+            best_A, best_B, best_C, best_D = A, B, C, D
+
+    v_pred = best_A * np.sin(best_B * u + best_C) + best_D
+    rmse, r2, autocorr, signs = compute_residual_metrics(v, v_pred)
+
+    us = np.linspace(domain[0], domain[1], 100)
+    vs = best_A * np.sin(best_B * us + best_C) + best_D
+    plot_pts = make_plot_points(us, vs, orientation)
+    geom_err = compute_geometric_error(stroke_pts, plot_pts)
+
+    latex, text = format_sine_equation(best_A, best_B, best_C, best_D, domain, orientation)
+    score = geom_err * 1.22
+
+    return FitCandidate(
+        family="sine",
+        family_name="Sine",
+        params={"A": best_A, "B": best_B, "C": best_C, "D": best_D},
+        latex=latex,
+        text=text,
+        domain=[domain[0], domain[1]],
+        orientation=orientation,
+        rmse=round(rmse, 4),
+        r_squared=round(r2, 4),
+        geom_error=round(geom_err, 4),
+        score=round(score, 4),
+        plot_points=plot_pts
+    )
+
+# ==========================================
+# MASTER FITTING & ORIENTATION SELECTION
+# ==========================================
+
+def fit_all_families(
+    stroke_pts: np.ndarray,
+    valid_orientations: List[str],
+    requested_families: Optional[List[str]] = None
+) -> Tuple[bool, List[FitCandidate], Optional[str], Dict[str, float]]:
     """
-    Fits all supported curve families, applies progressive model selection hurdles,
-    and returns ranked candidates if acceptance thresholds are satisfied.
+    Fits supported curve families across all valid orientations, compares them using
+    the common 2D geometric error metric, and returns quality-gated ranked candidates.
     """
-    families = requested_families or ['linear', 'quadratic', 'cubic', 'absolute_value']
-    candidates: List[FitCandidate] = []
+    timings: Dict[str, float] = {}
+    t_start = time.perf_counter()
 
-    y_span = float(np.max(y) - np.min(y))
-    scale_y = max(1.0, y_span)
+    allowed = requested_families or ['linear', 'quadratic', 'cubic', 'absolute_value', 'sine']
+    all_evaluated: List[FitCandidate] = []
 
-    # 1. Fit individual families
-    cand_map: Dict[str, FitCandidate] = {}
+    resamp_x = stroke_pts[:, 0]
+    resamp_y = stroke_pts[:, 1]
+    span_x = float(np.max(resamp_x) - np.min(resamp_x))
+    span_y = float(np.max(resamp_y) - np.min(resamp_y))
 
-    if 'linear' in families:
-        cand_map['linear'] = fit_linear(x, y, domain)
-    if 'quadratic' in families:
-        cand_map['quadratic'] = fit_quadratic(x, y, domain)
-    if 'cubic' in families:
-        cand_map['cubic'] = fit_cubic(x, y, domain)
-    if 'absolute_value' in families:
-        cand_map['absolute_value'] = fit_absolute_value(x, y, domain)
+    # Evaluate all valid orientations
+    for orient in valid_orientations:
+        if orient == "y_of_x":
+            sort_idx = np.argsort(resamp_x)
+            u = resamp_x[sort_idx]
+            v = resamp_y[sort_idx]
+            dom = (float(np.min(u)), float(np.max(u)))
+        else:
+            sort_idx = np.argsort(resamp_y)
+            u = resamp_y[sort_idx]
+            v = resamp_x[sort_idx]
+            dom = (float(np.min(u)), float(np.max(u)))
 
-    # 2. Progressive model selection hurdles (prevent wobble from promoting higher-degree polynomials)
-    lin_cand = cand_map.get('linear')
-    quad_cand = cand_map.get('quadratic')
-    cub_cand = cand_map.get('cubic')
-    abs_cand = cand_map.get('absolute_value')
+        # Fit requested families
+        if 'linear' in allowed:
+            t0 = time.perf_counter()
+            c = fit_linear(u, v, dom, orient, stroke_pts)
+            all_evaluated.append(c)
+            timings[f'{orient}_linear_ms'] = round((time.perf_counter() - t0) * 1000, 2)
 
-    if lin_cand and quad_cand:
-        # Require >= 18% improvement over linear to consider quadratic
-        if quad_cand.rmse > 0.82 * lin_cand.rmse:
-            quad_cand.score += 0.25 * scale_y
+        if 'quadratic' in allowed:
+            t0 = time.perf_counter()
+            c = fit_quadratic(u, v, dom, orient, stroke_pts)
+            all_evaluated.append(c)
+            timings[f'{orient}_quadratic_ms'] = round((time.perf_counter() - t0) * 1000, 2)
 
-    if quad_cand and cub_cand:
-        # Require >= 20% improvement over quadratic to consider cubic
-        if cub_cand.rmse > 0.80 * quad_cand.rmse:
-            cub_cand.score += 0.35 * scale_y
+        if 'cubic' in allowed:
+            t0 = time.perf_counter()
+            c = fit_cubic(u, v, dom, orient, stroke_pts)
+            all_evaluated.append(c)
+            timings[f'{orient}_cubic_ms'] = round((time.perf_counter() - t0) * 1000, 2)
 
-    if lin_cand and abs_cand:
-        # Require >= 20% improvement over linear to consider absolute value
-        if abs_cand.rmse > 0.80 * lin_cand.rmse or abs(abs_cand.params['a']) < 0.08:
-            abs_cand.score += 0.30 * scale_y
+        if 'absolute_value' in allowed:
+            t0 = time.perf_counter()
+            c = fit_absolute_value(u, v, dom, orient, stroke_pts)
+            all_evaluated.append(c)
+            timings[f'{orient}_absolute_value_ms'] = round((time.perf_counter() - t0) * 1000, 2)
 
-    all_cands = list(cand_map.values())
-    all_cands.sort(key=lambda c: c.score)
+        if 'sine' in allowed:
+            t0 = time.perf_counter()
+            c = fit_sine(u, v, dom, orient, stroke_pts)
+            all_evaluated.append(c)
+            timings[f'{orient}_sine_ms'] = round((time.perf_counter() - t0) * 1000, 2)
 
-    if not all_cands:
-        return False, [], "No curve families could be fitted."
+    if not all_evaluated:
+        return False, [], "No supported curve families selected.", timings
 
-    best = all_cands[0]
+    # Quality Gate Definition
+    def is_candidate_adequate(c: FitCandidate) -> Tuple[bool, Optional[str]]:
+        v_data = resamp_y if c.orientation == "y_of_x" else resamp_x
+        v_std = float(np.std(v_data))
+        v_span = float(np.max(v_data) - np.min(v_data))
+        noise_floor = 0.15
 
-    # 3. Acceptance threshold check (account for graph scale)
-    # Absolute max allowed RMSE is 1.45 units (in [-10, 10] grid), or 35% of stroke vertical span
-    max_allowed_rmse = min(1.45, max(0.45, 0.35 * scale_y))
+        # Flat line check
+        if v_std <= noise_floor:
+            if c.geom_error <= noise_floor * 1.5:
+                return True, None
+            return False, f"Geometric error {c.geom_error:.2f} exceeds noise floor."
 
-    if best.rmse > max_allowed_rmse:
-        return False, [], f"No supported curve family (Linear, Quadratic, Cubic, Absolute Value) adequately matches this stroke (Best RMSE = {best.rmse:.2f} exceeds tolerance {max_allowed_rmse:.2f})."
+        # Significant variation: model must explain at least 45% of variance
+        if c.r_squared < 0.45 and c.geom_error > noise_floor * 1.5:
+            return False, f"R² ({c.r_squared:.2f}) is too low (explains < 45% of variation)."
 
-    # Filter top viable candidates (up to 3) where RMSE is reasonable
-    acceptable = [c for c in all_cands if c.rmse <= max_allowed_rmse * 1.3][:3]
+        # Maximum geometric error ceiling
+        max_geom = min(1.40, max(0.40, 0.45 * max(span_x, span_y)))
+        if c.geom_error > max_geom:
+            return False, f"Geometric error ({c.geom_error:.2f}) exceeds maximum allowed tolerance ({max_geom:.2f})."
 
-    return True, acceptable, None
+        return True, None
+
+    is_user_forced = (requested_families is not None and len(requested_families) == 1)
+
+    if is_user_forced:
+        # Sort candidates by geometric error to pick the best orientation for this forced family
+        all_evaluated.sort(key=lambda c: c.geom_error)
+        cand = all_evaluated[0]
+        adequate, reason = is_candidate_adequate(cand)
+        if not adequate:
+            cand.is_poor_fit = True
+            cand.warning = f"⚠️ Poor Fit: This stroke does not match a {cand.family_name} curve well (R² = {cand.r_squared:.2f}, Error = {cand.geom_error:.2f})."
+        timings['total_ms'] = round((time.perf_counter() - t_start) * 1000, 2)
+        return True, [cand], None, timings
+
+    # Progressive Complexity Hurdles (evaluated per orientation)
+    for orient in valid_orientations:
+        cands_for_orient = {c.family: c for c in all_evaluated if c.orientation == orient}
+        lin = cands_for_orient.get('linear')
+        quad = cands_for_orient.get('quadratic')
+        cub = cands_for_orient.get('cubic')
+        abs_v = cands_for_orient.get('absolute_value')
+        sine_c = cands_for_orient.get('sine')
+
+        scale = max(1.0, span_y if orient == "y_of_x" else span_x)
+
+        if lin and quad:
+            if quad.geom_error > 0.85 * lin.geom_error:
+                quad.score += 0.25 * scale
+
+        if quad and cub:
+            if cub.geom_error > 0.82 * quad.geom_error:
+                cub.score += 0.35 * scale
+
+        if lin and abs_v:
+            if abs_v.geom_error > 0.82 * lin.geom_error or abs(abs_v.params['a']) < 0.08:
+                abs_v.score += 0.30 * scale
+
+        if sine_c:
+            dom_span = sine_c.domain[1] - sine_c.domain[0]
+            cycles = sine_c.params['B'] * dom_span / (2.0 * np.pi)
+            if cycles < 0.70 or sine_c.r_squared < 0.60:
+                sine_c.score += 0.50 * scale
+
+    # Filter through Quality Gate
+    valid_cands = []
+    for c in all_evaluated:
+        adequate, _ = is_candidate_adequate(c)
+        if adequate:
+            valid_cands.append(c)
+
+    if not valid_cands:
+        timings['total_ms'] = round((time.perf_counter() - t_start) * 1000, 2)
+        return False, [], "No supported equation fits this stroke well.", timings
+
+    # Sort all valid candidates across orientations by geometric score
+    valid_cands.sort(key=lambda c: c.score)
+
+    # Return top 3 distinct candidate models
+    seen_keys = set()
+    top_candidates = []
+    for c in valid_cands:
+        key = (c.family, c.orientation)
+        if key not in seen_keys:
+            seen_keys.add(key)
+            top_candidates.append(c)
+        if len(top_candidates) >= 3:
+            break
+
+    timings['total_ms'] = round((time.perf_counter() - t_start) * 1000, 2)
+    return True, top_candidates, None, timings

@@ -1015,6 +1015,48 @@ body {
   background-color: rgba(0, 0, 0, 0.4);
 }
 
+.fit-warning-box {
+  background-color: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fde68a;
+  border-radius: 6px;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.775rem;
+  line-height: 1.4;
+  margin-top: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.fit-orient-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background-color: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  margin-left: 0.35rem;
+}
+
+.fit-family-select {
+  background-color: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-family: 'Inter', sans-serif;
+  padding: 0.25rem 0.5rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.fit-family-select:focus {
+  border-color: var(--accent-color);
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
