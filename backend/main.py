@@ -1,3 +1,4 @@
+import os
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,15 +7,21 @@ from preprocessing import preprocess_stroke
 from fitting import fit_all_families
 
 app = FastAPI(
-    title="Reverse Desmos - Curve Fitting API",
+    title="Somsed - Curve Fitting API",
     description="Backend API for mathematical equation curve fitting on freehand graph strokes",
     version="1.1.0"
 )
 
-# Configure CORS for local development
+# Configure CORS for local development and production deployment
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "*")
+if allowed_origins_env == "*":
+    origins = ["*"]
+else:
+    origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

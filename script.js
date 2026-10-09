@@ -86,9 +86,20 @@ let displayWidth = 0;
 let displayHeight = 0;
 let shapeIdCounter = 1;
 
-// Milestone 4: Backend Equation Fitting Configuration & State
-const BACKEND_FIT_URL = 'http://127.0.0.1:8001/fit';
+// Milestone 4: Backend Equation Fitting Configuration & Analytics
+const BACKEND_FIT_URL = (window.SOMSED_CONFIG && window.SOMSED_CONFIG.BACKEND_URL) || 'http://127.0.0.1:8001/fit';
 let currentFitRequestId = 0;
+
+/**
+ * Safe helper to trigger analytics events through SomsedAnalytics.
+ */
+function trackAnalyticsEvent(eventName, properties = {}) {
+  try {
+    if (window.SomsedAnalytics && typeof window.SomsedAnalytics.trackEvent === 'function') {
+      window.SomsedAnalytics.trackEvent(eventName, properties);
+    }
+  } catch (_) { }
+}
 
 // ==========================================
 // 3. DOM ELEMENT REFERENCES
@@ -917,6 +928,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
         latexToCopy = eqData.edges.map(ed => `\\text{Edge } ${ed.edgeIndex}: ${ed.latex}`).join('\n');
       }
       copyTextToClipboard(latexToCopy, copyLatexBtn);
+      trackAnalyticsEvent('equation_copied', { format: 'latex', shape_type: shape.type });
     });
 
     const copyTextBtn = document.createElement('button');
@@ -931,6 +943,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
         textToCopy = eqData.edges.map(ed => `Edge ${ed.edgeIndex}: ${ed.text}`).join('\n');
       }
       copyTextToClipboard(textToCopy, copyTextBtn);
+      trackAnalyticsEvent('equation_copied', { format: 'text', shape_type: shape.type });
     });
 
     actions.appendChild(copyLatexBtn);
@@ -1336,6 +1349,7 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
       rejection_reason: 'Stroke contains too few distinct points to fit an equation.',
       is_parametric_needed: false
     };
+    trackAnalyticsEvent('fit_failed', { error_category: 'too_few_points' });
     updateEquationsUI();
     refreshPropertiesInputsIfSelected(shape.id);
     render();
@@ -1392,9 +1406,17 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
       shape.fitData = data;
       shape.selectedCandidateIndex = 0;
       shape.showOverlay = true;
+      const best = data.candidates[0];
+      trackAnalyticsEvent('fit_succeeded', {
+        model_family: best.family,
+        orientation: best.orientation || 'y_of_x'
+      });
     } else {
       shape.fitStatus = 'rejected';
       shape.fitData = data;
+      const isParam = !!data.is_parametric_needed;
+      const cat = isParam ? 'unsupported_curve_closed_loop' : 'no_model_matched';
+      trackAnalyticsEvent('fit_failed', { error_category: cat });
     }
   } catch (err) {
     clearTimeout(timeoutId);
@@ -1403,13 +1425,17 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
     }
     console.error('Fit curve error:', err);
     shape.fitStatus = 'error';
+    let errorCategory = 'server_error';
     if (err.name === 'AbortError') {
       shape.fitError = 'Fitting request timed out after 6 seconds. The backend may be busy or offline.';
+      errorCategory = 'timeout';
     } else if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))) {
-      shape.fitError = 'Cannot connect to Python FastAPI backend at http://127.0.0.1:8001. Please make sure the backend is running.';
+      shape.fitError = `Cannot connect to Python FastAPI backend at ${BACKEND_FIT_URL}. Please make sure the backend is running.`;
+      errorCategory = 'network_error';
     } else {
       shape.fitError = err.message || 'An error occurred during equation fitting.';
     }
+    trackAnalyticsEvent('fit_failed', { error_category: errorCategory });
   } finally {
     updateEquationsUI();
     refreshPropertiesInputsIfSelected(shape.id);
@@ -1679,11 +1705,12 @@ function applyCurveProperties(shape) {
     cand.geom_error = newGeomError;
     cand.rmse = newGeomError;
 
-    // 7. Refresh UI
+    // 7. Refresh UI & Track Analytics
     showPropertySuccess('Parameters applied and curve updated.');
     renderShapePropertiesUI(shape);
     updateEquationsUI();
     render();
+    trackAnalyticsEvent('edit_applied', { object_type: `curve_${cand.family}` });
   } catch (err) {
     showPropertyError(err.message || 'Invalid curve parameter value.');
   }
@@ -2616,6 +2643,7 @@ function handleApplyShapeProperties(shape) {
     updateEquationsUI();
     render();
     showPropertySuccess('Geometry updated.');
+    trackAnalyticsEvent('edit_applied', { object_type: shape.type });
   } catch (err) {
     showPropertyError(err.message || 'Invalid input values.');
   }
@@ -2969,6 +2997,7 @@ function handlePointerUp(event) {
       selectedShapeId = snappedShape.id;
       renderShapePropertiesUI(snappedShape);
       updateStatusUI('committed-shape');
+      trackAnalyticsEvent('shape_recognized', { shape_type: snappedShape.type });
     } else if (appState === 'drawing' && currentStroke && currentStroke.length > 0) {
       const freehandLabel = generateShapeLabel('freehand');
       const freehandShape = {
@@ -2988,6 +3017,7 @@ function handlePointerUp(event) {
       selectedShapeId = freehandShape.id;
       renderShapePropertiesUI(freehandShape);
       updateStatusUI('committed-freehand');
+      trackAnalyticsEvent('drawing_completed', { stroke_type: 'freehand' });
     }
   } else if (toolMode === 'edit') {
     if (selectedShapeId) {
