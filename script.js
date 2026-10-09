@@ -156,7 +156,7 @@ function graphToCanvas(graphX, graphY, width, height) {
 function updateStatsDisplay() {
   const domainEl = document.getElementById('domain-display');
   if (domainEl) {
-    domainEl.innerHTML = `Domain: <strong>[${DOMAIN.min.toFixed(1)}, ${DOMAIN.max.toFixed(1)}]</strong>`;
+    domainEl.textContent = `[${DOMAIN.min.toFixed(1)}, ${DOMAIN.max.toFixed(1)}]`;
   }
   if (strokeCountDisplay) {
     strokeCountDisplay.textContent = shapes.length.toString();
@@ -761,18 +761,7 @@ function render() {
 // ==========================================
 
 function getShapeIcon(type) {
-  switch (type) {
-    case 'line': return '📏';
-    case 'circle': return '⭕';
-    case 'ellipse': return '⬭';
-    case 'rectangle': return '▭';
-    case 'square': return '◻️';
-    case 'triangle': return '📐';
-    case 'polygon': return '⬡';
-    case 'star': return '⭐';
-    case 'freehand': return '✏️';
-    default: return '📐';
-  }
+  return '';
 }
 
 /**
@@ -814,8 +803,8 @@ function copyTextToClipboard(text, btnElement) {
   if (!text) return;
   navigator.clipboard.writeText(text).then(() => {
     const orig = btnElement.textContent;
-    btnElement.textContent = '✅ Copied!';
-    btnElement.style.color = '#38bdf8';
+    btnElement.textContent = 'Copied!';
+    btnElement.style.color = 'var(--accent-primary)';
     setTimeout(() => {
       btnElement.textContent = orig;
       btnElement.style.color = '';
@@ -826,7 +815,7 @@ function copyTextToClipboard(text, btnElement) {
 }
 
 /**
- * Constructs an interactive, accessible card for a shape's mathematical equations.
+ * Constructs an interactive, flat Desmos-style row for a shape's mathematical equations.
  */
 function createEquationCard(shape, eqData, isSelected, isPreview) {
   const card = document.createElement('div');
@@ -835,7 +824,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
 
   const shapeIdx = shapes.findIndex(s => s.id === shape.id);
   const shapeColor = getShapeColor(shape, shapeIdx);
-  card.style.borderLeftColor = shapeColor;
+  card.style.borderLeftColor = isSelected ? shapeColor : 'transparent';
 
   // Header
   const header = document.createElement('div');
@@ -850,11 +839,6 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
   numPill.textContent = (shapeIdx !== -1 ? (shapeIdx + 1) : '#').toString();
   titleTag.appendChild(numPill);
 
-  const iconSpan = document.createElement('span');
-  iconSpan.className = 'equation-shape-icon';
-  iconSpan.textContent = getShapeIcon(shape.type);
-  titleTag.appendChild(iconSpan);
-
   const titleSpan = document.createElement('span');
   titleSpan.textContent = eqData.title;
   titleTag.appendChild(titleSpan);
@@ -868,17 +852,15 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
 
   if (isPreview) {
     const previewBadge = document.createElement('span');
-    previewBadge.className = 'badge';
-    previewBadge.style.fontSize = '0.65rem';
+    previewBadge.className = 'fit-orient-badge';
     previewBadge.style.backgroundColor = 'var(--accent-light)';
     previewBadge.style.color = 'var(--accent-primary)';
-    previewBadge.style.marginLeft = '0.4rem';
-    previewBadge.textContent = 'Previewing...';
+    previewBadge.textContent = 'Preview';
     titleTag.appendChild(previewBadge);
   }
   header.appendChild(titleTag);
 
-  // Actions (Copy & Delete)
+  // Actions (Copy LaTeX, Copy Text, Delete)
   const actions = document.createElement('div');
   actions.className = 'equation-actions';
 
@@ -886,8 +868,8 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
     const copyLatexBtn = document.createElement('button');
     copyLatexBtn.type = 'button';
     copyLatexBtn.className = 'btn-copy-eq';
-    copyLatexBtn.title = 'Copy LaTeX equation to clipboard';
-    copyLatexBtn.textContent = 'Copy LaTeX';
+    copyLatexBtn.title = 'Copy LaTeX equation';
+    copyLatexBtn.textContent = 'LaTeX';
     copyLatexBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       let latexToCopy = eqData.primaryEquation || '';
@@ -900,8 +882,8 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
     const copyTextBtn = document.createElement('button');
     copyTextBtn.type = 'button';
     copyTextBtn.className = 'btn-copy-eq';
-    copyTextBtn.title = 'Copy Plain Text equation to clipboard';
-    copyTextBtn.textContent = 'Copy Text';
+    copyTextBtn.title = 'Copy Plain Text equation';
+    copyTextBtn.textContent = 'Text';
     copyTextBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       let textToCopy = eqData.primaryText || '';
@@ -938,25 +920,25 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       loadingBox.className = 'fit-loading-box';
       loadingBox.innerHTML = `
         <div class="fit-spinner"></div>
-        <span>Fitting function curve families (Linear, Quadratic, Cubic, Abs, Sine)...</span>
+        <span>Fitting curve equation...</span>
       `;
       card.appendChild(loadingBox);
     } else if (shape.fitStatus === 'error') {
       const errBox = document.createElement('div');
       errBox.className = 'fit-rejection-box';
-      errBox.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-      errBox.style.backgroundColor = 'rgba(239, 68, 68, 0.08)';
-      errBox.style.color = '#fca5a5';
+      errBox.style.borderColor = '#fca5a5';
+      errBox.style.backgroundColor = '#fef2f2';
+      errBox.style.color = '#b91c1c';
       errBox.innerHTML = `
-        <div style="font-weight: 600; margin-bottom: 0.25rem;">⚠️ Fitting Service Notice</div>
-        <div style="font-size: 0.8rem; line-height: 1.4;">${shape.fitError || 'Cannot connect to Python FastAPI backend at http://127.0.0.1:8001.'}</div>
+        <div style="font-weight: 600; margin-bottom: 0.25rem;">Fitting Service Notice</div>
+        <div style="font-size: 0.75rem; line-height: 1.4;">${shape.fitError || 'Cannot connect to Python backend at http://127.0.0.1:8001.'}</div>
       `;
       const retryBtn = document.createElement('button');
       retryBtn.type = 'button';
       retryBtn.className = 'btn-fit';
-      retryBtn.style.marginTop = '0.5rem';
-      retryBtn.style.padding = '0.35rem 0.75rem';
-      retryBtn.textContent = '🔄 Retry Connection';
+      retryBtn.style.marginTop = '0.4rem';
+      retryBtn.style.padding = '0.25rem 0.6rem';
+      retryBtn.textContent = 'Retry Connection';
       retryBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         fitFreehandStroke(shape);
@@ -969,16 +951,16 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       const isParam = !!shape.fitData?.is_parametric_needed;
       const reason = shape.fitData?.rejection_reason || shape.fitData?.message || 'Curve could not be approximated by supported function families.';
       rejBox.innerHTML = `
-        <div style="font-weight: 600; margin-bottom: 0.25rem;">ℹ️ Curve Not Fitted</div>
-        <div style="font-size: 0.8rem; line-height: 1.4;">${reason}</div>
+        <div style="font-weight: 600; margin-bottom: 0.25rem;">Curve Not Fitted</div>
+        <div style="font-size: 0.75rem; line-height: 1.4;">${reason}</div>
       `;
       if (!isParam) {
         const retryBtn = document.createElement('button');
         retryBtn.type = 'button';
         retryBtn.className = 'btn-fit';
-        retryBtn.style.marginTop = '0.5rem';
-        retryBtn.style.padding = '0.35rem 0.75rem';
-        retryBtn.textContent = '🔄 Try Again';
+        retryBtn.style.marginTop = '0.4rem';
+        retryBtn.style.padding = '0.25rem 0.6rem';
+        retryBtn.textContent = 'Try Again';
         retryBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           fitFreehandStroke(shape);
@@ -991,7 +973,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       if (eqData.isPoorFit) {
         const warnBox = document.createElement('div');
         warnBox.className = 'fit-warning-box';
-        warnBox.innerHTML = `<span>⚠️</span><span>${eqData.warning || 'Poor fit: Model does not adequately match stroke geometry.'}</span>`;
+        warnBox.innerHTML = `<span>${eqData.warning || 'Poor fit: Model does not adequately match stroke geometry.'}</span>`;
         card.appendChild(warnBox);
       }
 
@@ -1003,10 +985,9 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
           const pill = document.createElement('button');
           pill.type = 'button';
           pill.className = `fit-candidate-pill ${idx === eqData.candidateIndex ? 'active' : ''}`;
-          const isTop = idx === 0 ? '★ ' : '';
           const orientTag = cand.orientation === 'x_of_y' ? ' [x=g(y)]' : '';
           const errVal = cand.geom_error !== undefined ? cand.geom_error : cand.rmse;
-          pill.innerHTML = `<span>${isTop}${cand.family_name}${orientTag}</span> <span class="fit-rmse-tag">Err: ${errVal.toFixed(3)}</span>`;
+          pill.innerHTML = `<span>${cand.family_name}${orientTag}</span> <span class="fit-rmse-tag">Err: ${errVal.toFixed(3)}</span>`;
           pill.addEventListener('click', (e) => {
             e.stopPropagation();
             shape.selectedCandidateIndex = idx;
@@ -1031,7 +1012,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       statsDiv.className = 'equation-details-sub';
       const errVal = eqData.geomError !== undefined ? eqData.geomError : eqData.rmse;
       const orientText = eqData.isSideways ? 'x = g(y)' : 'y = f(x)';
-      statsDiv.innerHTML = `<span>Family: <strong>${eqData.familyName}</strong> (${orientText})</span> <span>R²: <strong>${eqData.rSquared.toFixed(3)}</strong></span> <span>2D Error: <strong>${errVal.toFixed(3)}</strong></span>`;
+      statsDiv.innerHTML = `<span>Family: <strong>${eqData.familyName}</strong> (${orientText})</span> <span>R²: <strong>${eqData.rSquared.toFixed(3)}</strong></span> <span>Error: <strong>${errVal.toFixed(3)}</strong></span>`;
       mathBox.appendChild(statsDiv);
       card.appendChild(mathBox);
 
@@ -1042,12 +1023,12 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       const overlayBtn = document.createElement('button');
       overlayBtn.type = 'button';
       overlayBtn.className = `btn-toggle-overlay ${shape.showOverlay !== false ? 'active' : ''}`;
-      overlayBtn.textContent = shape.showOverlay !== false ? '👁️ Overlay: Visible' : '👁️ Overlay: Hidden';
+      overlayBtn.textContent = shape.showOverlay !== false ? 'Overlay: Visible' : 'Overlay: Hidden';
       overlayBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         shape.showOverlay = !(shape.showOverlay !== false);
         overlayBtn.className = `btn-toggle-overlay ${shape.showOverlay ? 'active' : ''}`;
-        overlayBtn.textContent = shape.showOverlay ? '👁️ Overlay: Visible' : '👁️ Overlay: Hidden';
+        overlayBtn.textContent = shape.showOverlay ? 'Overlay: Visible' : 'Overlay: Hidden';
         render();
       });
       actionRow.appendChild(overlayBtn);
@@ -1067,9 +1048,9 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       const refitBtn = document.createElement('button');
       refitBtn.type = 'button';
       refitBtn.className = 'btn-fit';
-      refitBtn.style.padding = '0.35rem 0.65rem';
-      refitBtn.style.fontSize = '0.78rem';
-      refitBtn.textContent = '🔄 Refit';
+      refitBtn.style.padding = '0.25rem 0.55rem';
+      refitBtn.style.fontSize = '0.75rem';
+      refitBtn.textContent = 'Refit';
       refitBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const chosen = famSelect.value || null;
@@ -1083,9 +1064,9 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       // Unfitted initial state
       const freehandBox = document.createElement('div');
       freehandBox.className = 'equation-math-box';
-      freehandBox.style.fontSize = '0.825rem';
-      freehandBox.style.color = '#94a3b8';
-      freehandBox.textContent = 'Freehand curve drawn. Click "Fit Curve Equation" to discover the best mathematical model (Linear, Quadratic, Cubic, Absolute Value, or Sine Wave).';
+      freehandBox.style.fontSize = '0.8rem';
+      freehandBox.style.color = '#6b7280';
+      freehandBox.textContent = 'Freehand curve drawn. Click "Fit equation" to approximate with standard mathematical models.';
       card.appendChild(freehandBox);
 
       const actionRow = document.createElement('div');
@@ -1093,7 +1074,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       const fitBtn = document.createElement('button');
       fitBtn.type = 'button';
       fitBtn.className = 'btn-fit';
-      fitBtn.innerHTML = '⚡ Fit Curve Equation';
+      fitBtn.textContent = 'Fit equation';
       fitBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         fitFreehandStroke(shape);
@@ -1105,13 +1086,6 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
     // Polygon / Closed multi-edge shape
     const summaryBox = document.createElement('div');
     summaryBox.className = 'equation-math-box';
-
-    const summaryText = document.createElement('div');
-    summaryText.style.fontSize = '0.85rem';
-    summaryText.style.fontWeight = '500';
-    summaryText.style.color = '#f8fafc';
-    summaryText.textContent = `Piecewise Boundary (${eqData.edgeCount} Edges)`;
-    summaryBox.appendChild(summaryText);
 
     const details = document.createElement('details');
     details.className = 'equation-edges-details';
@@ -1204,15 +1178,12 @@ function updateEquationsUI() {
     previewItem = snappedShape;
   }
 
-  const mathShapeCount = activeItems.filter(s => s.type !== 'freehand').length;
-  equationCountBadge.textContent = `${mathShapeCount} ${mathShapeCount === 1 ? 'Shape' : 'Shapes'}`;
+  equationCountBadge.textContent = `${activeItems.length} ${activeItems.length === 1 ? 'item' : 'items'}`;
 
   if (activeItems.length === 0) {
     equationsList.innerHTML = `
-      <div class="equations-empty-state">
-        <span class="empty-icon">📐</span>
-        <p>No recognized shapes yet.</p>
-        <span class="empty-subtext">Draw and hold a line, circle, ellipse, rectangle, triangle, polygon, or star to see its exact mathematical equations.</span>
+      <div class="empty-state-simple">
+        Draw on the graph to begin.
       </div>
     `;
     return;
@@ -1354,7 +1325,7 @@ function showPropertyError(msg, inputId = null) {
   const succBox = document.getElementById('properties-success');
   if (succBox) succBox.classList.add('hidden');
   if (errBox) {
-    errBox.textContent = `⚠️ ${msg}`;
+    errBox.textContent = msg;
     errBox.classList.remove('hidden');
   }
   if (inputId) {
@@ -1371,7 +1342,7 @@ function showPropertySuccess(msg) {
   const succBox = document.getElementById('properties-success');
   if (errBox) errBox.classList.add('hidden');
   if (succBox) {
-    succBox.textContent = `✅ ${msg}`;
+    succBox.textContent = msg;
     succBox.classList.remove('hidden');
     setTimeout(() => {
       if (succBox) succBox.classList.add('hidden');
@@ -1398,24 +1369,18 @@ function getNumericFieldValue(inputId, originalVal) {
  * Renders the numerical property inputs for the selected shape.
  */
 function renderShapePropertiesUI(shape) {
-  if (!propertiesBody || !propertiesShapeBadge) return;
+  if (!propertiesCard || !propertiesBody || !propertiesShapeBadge) return;
 
   if (!shape) {
-    propertiesShapeBadge.textContent = 'No Selection';
-    propertiesShapeBadge.className = 'properties-shape-badge no-selection';
-    propertiesBody.innerHTML = `
-      <div class="properties-empty-state">
-        <span class="empty-icon">👆</span>
-        <p>No shape selected.</p>
-        <span class="empty-subtext">Click any shape on the canvas or its equation card to inspect and precisely adjust its numerical coordinates and dimensions.</span>
-      </div>
-    `;
+    propertiesCard.classList.add('hidden');
+    propertiesBody.innerHTML = '';
     return;
   }
 
+  propertiesCard.classList.remove('hidden');
+
   const { type, geometry } = shape;
   propertiesShapeBadge.textContent = shape.label || capitalize(type);
-  propertiesShapeBadge.className = 'properties-shape-badge';
 
   if (type === 'freehand') {
     const pts = geometry.points || shape.rawPoints || [];
@@ -1436,28 +1401,28 @@ function renderShapePropertiesUI(shape) {
     let fitSectionHtml = '';
     if (shape.fitStatus === 'loading') {
       fitSectionHtml = `
-        <div class="fit-loading-box" style="margin-top: 0.75rem;">
+        <div class="fit-loading-box" style="margin-top: 0.5rem; margin-left: 0;">
           <div class="fit-spinner"></div>
-          <span>Fitting curve equation via backend...</span>
+          <span>Fitting curve equation...</span>
         </div>
       `;
     } else if (shape.fitStatus === 'rejected') {
       const isParam = !!shape.fitData?.is_parametric_needed;
       const reason = shape.fitData?.rejection_reason || 'Curve could not be approximated by supported function families.';
-      const retryBtnHtml = isParam ? '' : `<button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.5rem; padding: 0.35rem 0.75rem;">🔄 Try Again</button>`;
+      const retryBtnHtml = isParam ? '' : `<button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.4rem; padding: 0.25rem 0.6rem;">Try Again</button>`;
       fitSectionHtml = `
-        <div class="fit-rejection-box" style="margin-top: 0.75rem;">
-          <div style="font-weight: 600; margin-bottom: 0.25rem;">ℹ️ Curve Not Fitted</div>
-          <div style="font-size: 0.8rem; line-height: 1.4;">${reason}</div>
+        <div class="fit-rejection-box" style="margin-top: 0.5rem; margin-left: 0;">
+          <div style="font-weight: 600; margin-bottom: 0.25rem;">Curve Not Fitted</div>
+          <div style="font-size: 0.75rem; line-height: 1.4;">${reason}</div>
           ${retryBtnHtml}
         </div>
       `;
     } else if (shape.fitStatus === 'error') {
       fitSectionHtml = `
-        <div class="fit-rejection-box" style="margin-top: 0.75rem; border-color: rgba(239, 68, 68, 0.4); background-color: rgba(239, 68, 68, 0.08); color: #fca5a5;">
-          <div style="font-weight: 600; margin-bottom: 0.25rem;">⚠️ Fitting Service Notice</div>
-          <div style="font-size: 0.8rem; line-height: 1.4;">${shape.fitError || 'Ensure Python backend is running on port 8001.'}</div>
-          <button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.5rem; padding: 0.35rem 0.75rem;">🔄 Retry Connection</button>
+        <div class="fit-rejection-box" style="margin-top: 0.5rem; margin-left: 0; border-color: #fca5a5; background-color: #fef2f2; color: #b91c1c;">
+          <div style="font-weight: 600; margin-bottom: 0.25rem;">Fitting Service Notice</div>
+          <div style="font-size: 0.75rem; line-height: 1.4;">${shape.fitError || 'Ensure Python backend is running on port 8001.'}</div>
+          <button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.4rem; padding: 0.25rem 0.6rem;">Retry Connection</button>
         </div>
       `;
     } else if (isFitted && activeCand) {
@@ -1467,7 +1432,7 @@ function renderShapePropertiesUI(shape) {
         paramsHtml += `
           <div class="property-group">
             <label class="property-label">${key}</label>
-            <input type="text" class="property-input" readonly value="${val.toFixed(6)}" style="background: rgba(15, 23, 42, 0.6); color: #94a3b8;" />
+            <input type="text" class="property-input" readonly value="${val.toFixed(6)}" style="background: #f3f4f6; color: #6b7280;" />
           </div>
         `;
       }
@@ -1475,15 +1440,15 @@ function renderShapePropertiesUI(shape) {
       let candPillsHtml = '';
       if (candidates.length > 1) {
         candPillsHtml = `
-          <div style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+          <div style="margin-top: 0.4rem; margin-bottom: 0.4rem;">
             <label class="property-label">Candidate Family:</label>
-            <div class="fit-candidates-container" style="margin-top: 0.25rem;">
+            <div class="fit-candidates-container" style="margin-top: 0.2rem; margin-left: 0;">
               ${candidates.map((c, i) => {
           const orientTag = c.orientation === 'x_of_y' ? ' [x=g(y)]' : '';
           const errVal = c.geom_error !== undefined ? c.geom_error : c.rmse;
           return `
                 <button type="button" class="fit-candidate-pill ${i === selectedIdx ? 'active' : ''}" data-cand-idx="${i}">
-                  <span>${i === 0 ? '★ ' : ''}${c.family_name}${orientTag}</span>
+                  <span>${c.family_name}${orientTag}</span>
                   <span class="fit-rmse-tag">Err: ${errVal.toFixed(3)}</span>
                 </button>
               `;
@@ -1494,8 +1459,8 @@ function renderShapePropertiesUI(shape) {
       }
 
       const warnHtml = activeCand.is_poor_fit ? `
-        <div class="fit-warning-box">
-          <span>⚠️</span><span>${activeCand.warning || 'Poor fit: Model does not match stroke geometry well.'}</span>
+        <div class="fit-warning-box" style="margin-left: 0;">
+          <span>${activeCand.warning || 'Poor fit: Model does not match stroke geometry well.'}</span>
         </div>
       ` : '';
 
@@ -1503,20 +1468,20 @@ function renderShapePropertiesUI(shape) {
       const orientLabel = activeCand.orientation === 'x_of_y' ? 'x = g(y) (Sideways)' : 'y = f(x)';
 
       fitSectionHtml = `
-        <div class="fit-card-section" style="margin-top: 0.75rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
-            <span style="font-size: 0.85rem; font-weight: 600; color: #38bdf8;">✨ Fitted Model: ${activeCand.family_name}</span>
-            <span class="fit-rmse-tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">2D Error: ${errVal.toFixed(4)}</span>
+        <div class="fit-card-section" style="margin-top: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+            <span style="font-size: 0.8rem; font-weight: 600; color: var(--accent-primary);">Fitted Model: ${activeCand.family_name}</span>
+            <span class="fit-rmse-tag" style="background: rgba(45, 146, 56, 0.1); color: var(--accent-primary); border: 1px solid rgba(45, 146, 56, 0.3);">Error: ${errVal.toFixed(4)}</span>
           </div>
-          <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.35rem;">Orientation: <strong>${orientLabel}</strong> | R²: <strong>${activeCand.r_squared.toFixed(3)}</strong></div>
+          <div style="font-size: 0.72rem; color: #6b7280; margin-bottom: 0.3rem;">Orientation: <strong>${orientLabel}</strong> | R²: <strong>${activeCand.r_squared.toFixed(3)}</strong></div>
           ${warnHtml}
           ${candPillsHtml}
-          <div class="properties-grid" style="margin-top: 0.5rem;">
+          <div class="properties-grid" style="margin-top: 0.4rem;">
             ${paramsHtml}
           </div>
-          <div class="fit-action-row" style="margin-top: 0.75rem;">
+          <div class="fit-action-row" style="margin-top: 0.5rem; margin-left: 0;">
             <button type="button" class="btn-toggle-overlay ${shape.showOverlay !== false ? 'active' : ''}" id="prop-toggle-overlay-btn">
-              ${shape.showOverlay !== false ? '👁️ Overlay: Visible' : '👁️ Overlay: Hidden'}
+              ${shape.showOverlay !== false ? 'Overlay: Visible' : 'Overlay: Hidden'}
             </button>
             <select class="fit-family-select" id="prop-family-select" title="Refit with specific family">
               <option value="">Auto Best Fit</option>
@@ -1526,15 +1491,15 @@ function renderShapePropertiesUI(shape) {
               <option value="absolute_value">Absolute Value</option>
               <option value="sine">Sine Wave</option>
             </select>
-            <button type="button" class="btn-fit" id="prop-refit-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;">🔄 Refit</button>
+            <button type="button" class="btn-fit" id="prop-refit-btn" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;">Refit</button>
           </div>
         </div>
       `;
     } else {
       fitSectionHtml = `
-        <div class="fit-action-row" style="margin-top: 0.75rem;">
+        <div class="fit-action-row" style="margin-top: 0.5rem; margin-left: 0;">
           <button type="button" class="btn-fit" id="prop-fit-btn" style="width: 100%; justify-content: center;">
-            ⚡ Fit Curve Equation
+            Fit equation
           </button>
         </div>
       `;
@@ -1544,11 +1509,11 @@ function renderShapePropertiesUI(shape) {
       <div class="properties-form">
         <div class="properties-info-row">
           <span>Type: <strong>Freehand Stroke</strong></span>
-          <span>Sampled Points: <strong>${ptCount}</strong></span>
+          <span>Points: <strong>${ptCount}</strong></span>
         </div>
         <div class="properties-info-row">
-          <span>X Domain: <strong>[${xMin.toFixed(2)}, ${xMax.toFixed(2)}]</strong></span>
-          <span>Y Range: <strong>[${yMin.toFixed(2)}, ${yMax.toFixed(2)}]</strong></span>
+          <span>Domain: <strong>[${xMin.toFixed(2)}, ${xMax.toFixed(2)}]</strong></span>
+          <span>Range: <strong>[${yMin.toFixed(2)}, ${yMax.toFixed(2)}]</strong></span>
         </div>
         ${fitSectionHtml}
       </div>
@@ -2181,7 +2146,7 @@ function updateStatusUI(customState = null) {
       break;
     case 'adjustingShape':
       statusBanner.classList.add('is-adjusting');
-      statusText.textContent = `✨ ${capitalize(snappedShape?.type || 'Shape')} snapped! Drag to adjust size & angle; release to save.`;
+      statusText.textContent = `${capitalize(snappedShape?.type || 'Shape')} snapped. Drag to adjust size and angle.`;
       break;
     case 'committed-shape':
       statusBanner.classList.add('is-snapped');
@@ -2195,7 +2160,7 @@ function updateStatusUI(customState = null) {
       break;
     case 'edit-selected':
       statusBanner.classList.add('is-adjusting');
-      statusText.textContent = 'Shape selected. Drag handles or use the Shape Properties panel below.';
+      statusText.textContent = 'Shape selected. Drag handles or use Properties panel.';
       break;
     case 'idle':
     default:
@@ -2238,7 +2203,7 @@ function updateDebugUI() {
         <tbody>
           ${d.candidates.map(c => `
             <tr class="${c.type === d.winner ? 'winner-row' : ''}">
-              <td>${c.type === d.winner ? '⭐ ' : ''}${capitalize(c.type)}</td>
+              <td>${capitalize(c.type)}</td>
               <td>${c.rawError.toFixed(3)}</td>
               <td>+${c.complexityPenalty.toFixed(3)}</td>
               <td><strong>${c.normalizedError.toFixed(3)}</strong></td>
@@ -2820,7 +2785,7 @@ function handleCopyStrokeJSON() {
   navigator.clipboard.writeText(json).then(() => {
     if (debugCopyBtn) {
       const originalText = debugCopyBtn.textContent;
-      debugCopyBtn.textContent = '✅ Copied!';
+      debugCopyBtn.textContent = 'Copied!';
       setTimeout(() => { debugCopyBtn.textContent = originalText; }, 1500);
     }
   }).catch(() => {

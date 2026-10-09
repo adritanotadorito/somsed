@@ -4,11 +4,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Reverse Desmos — Geometric Shape Recognition & Equations</title>
+  <title>Somsed - Reverse Desmos</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
@@ -17,42 +17,28 @@
 
 <body>
   <div class="app-container">
-    <!-- Top Desmos-Style Header -->
+    <!-- Top Dark Charcoal Header -->
     <header class="app-header">
       <div class="header-left">
-        <div class="brand">
-          <div class="brand-logo" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-              stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 3v18h18"></path>
-              <path d="m19 9-5 5-4-4-3 3"></path>
-            </svg>
-          </div>
-          <h1>Reverse Desmos</h1>
-          <span class="badge">Milestone 4</span>
-        </div>
-      </div>
-
-      <div class="header-center">
         <div class="mode-toggle-group" role="radiogroup" aria-label="Tool mode">
           <button type="button" id="mode-draw-btn" class="mode-btn active"
             title="Draw Mode (Draw freehand or hold to snap)">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
               <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
               <path d="M2 2l7.586 7.586"></path>
               <circle cx="11" cy="11" r="2"></circle>
             </svg>
-            Draw
+            <span>Draw</span>
           </button>
           <button type="button" id="mode-edit-btn" class="mode-btn" title="Edit Mode (Select and transform shapes)">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"></path>
               <path d="M13 13l6 6"></path>
             </svg>
-            Edit
+            <span>Edit</span>
           </button>
         </div>
 
@@ -60,19 +46,25 @@
           <button id="mobile-tab-graph" type="button" class="mobile-tab-btn active" role="tab">Graph</button>
           <button id="mobile-tab-sidebar" type="button" class="mobile-tab-btn" role="tab">Expressions</button>
         </div>
+      </div>
 
-        <div class="stats" id="stats-display">
-          <span class="stat-item">Domain: <strong id="domain-display">[-10, 10]</strong></span>
-          <span class="stat-divider">•</span>
-          <span class="stat-item">Items: <strong id="stroke-count">0</strong></span>
-        </div>
+      <!-- Center Branding (Centered across entire viewport) -->
+      <div class="brand-center">
+        <h1 class="brand-title">somsed</h1>
+        <span class="brand-subtitle">(reverse desmos)</span>
       </div>
 
       <div class="header-right">
+        <div class="stats" id="stats-display">
+          <span class="stat-item"><strong id="domain-display">[-10.0, 10.0]</strong></span>
+          <span class="stat-divider">•</span>
+          <span class="stat-item"><strong id="stroke-count">0</strong> items</span>
+        </div>
+
         <div class="actions">
-          <button id="debug-toggle-btn" type="button" class="btn btn-secondary debug-btn"
-            title="Toggle Recognition Diagnostics Telemetry">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          <button id="debug-toggle-btn" type="button" class="btn btn-header debug-btn"
+            title="Toggle Diagnostics Telemetry">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <rect width="8" height="14" x="8" y="6" rx="4"></rect>
               <path d="m19 7-3 2"></path>
@@ -84,17 +76,17 @@
               <path d="m10 4 1 2"></path>
               <path d="m14 4-1 2"></path>
             </svg>
-            Debug
+            <span>Debug</span>
           </button>
 
-          <button id="clear-btn" type="button" class="btn btn-secondary" title="Clear all shapes and drawings">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          <button id="clear-btn" type="button" class="btn btn-header btn-clear" title="Clear all shapes and drawings">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 6h18"></path>
               <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
               <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
             </svg>
-            Clear Canvas
+            <span>Clear</span>
           </button>
         </div>
       </div>
@@ -102,15 +94,15 @@
 
     <!-- Main Workspace Split (Sidebar + Resizer + Graph) -->
     <main class="workspace">
-      <!-- Left Sidebar (Expressions, Properties, Debug) -->
+      <!-- Left Sidebar (Flat Expressions & Properties) -->
       <aside class="sidebar" id="sidebar" aria-label="Expressions and Properties Sidebar">
         <div class="sidebar-header">
           <div class="sidebar-title">
-            <h2>Expressions & Properties</h2>
-            <span id="equation-count-badge" class="equation-count-badge">0</span>
+            <h2>Expressions</h2>
+            <span id="equation-count-badge" class="equation-count-badge">0 items</span>
           </div>
           <button id="sidebar-collapse-btn" class="sidebar-icon-btn" title="Collapse sidebar" aria-label="Collapse sidebar">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="m15 18-6-6 6-6"></path>
             </svg>
@@ -118,58 +110,47 @@
         </div>
 
         <div class="sidebar-content">
-          <!-- Numerical Shape Properties Panel -->
-          <section class="properties-card" id="properties-card" aria-label="Shape Properties">
+          <!-- Numerical Shape Properties Panel (Hidden until a shape is selected) -->
+          <section class="properties-card hidden" id="properties-card" aria-label="Shape Properties">
             <div class="properties-header">
               <div class="properties-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                   stroke-linecap="round" stroke-linejoin="round">
                   <path d="M12 20h9"></path>
                   <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
                 </svg>
-                <h3>Shape Properties</h3>
+                <h3>Properties</h3>
               </div>
-              <span id="properties-shape-badge" class="properties-shape-badge no-selection">No Selection</span>
+              <span id="properties-shape-badge" class="properties-shape-badge">Selected</span>
             </div>
             <div id="properties-body" class="properties-body">
-              <div class="properties-empty-state">
-                <span class="empty-icon">👆</span>
-                <p>No shape selected.</p>
-                <span class="empty-subtext">Click any shape on the canvas or its expression card to inspect and precisely
-                  adjust its numerical coordinates and dimensions.</span>
-              </div>
+              <!-- Populated dynamically when a shape is selected -->
             </div>
           </section>
 
-          <!-- Mathematical Equations Results Panel -->
+          <!-- Mathematical Expressions List -->
           <section class="equations-card" id="equations-card" aria-label="Mathematical Equations">
             <div id="equations-list" class="equations-list">
-              <div class="equations-empty-state">
-                <span class="empty-icon">📐</span>
-                <p>No recognized shapes yet.</p>
-                <span class="empty-subtext">Draw and hold a line, circle, ellipse, rectangle, triangle, polygon, or star,
-                  or fit freehand curves to see their exact mathematical equations.</span>
-              </div>
+              <div class="empty-state-simple">Draw on the graph to begin.</div>
             </div>
           </section>
 
-          <!-- Development-Only Debug Diagnostics Panel (Hidden by default) -->
+          <!-- Development Diagnostics Telemetry (Hidden by default) -->
           <div id="debug-panel" class="debug-panel hidden">
             <div class="debug-header">
               <div class="debug-title">
-                <span class="debug-icon">🐞</span>
-                <h4>Recognition Telemetry</h4>
+                <h4>Diagnostics</h4>
               </div>
               <span id="debug-winner-badge" class="debug-badge">No Attempts</span>
             </div>
             <div class="debug-actions">
               <button id="debug-copy-btn" type="button" class="btn btn-secondary btn-sm"
                 title="Copy raw stroke points as JSON">
-                📋 Copy Stroke JSON
+                Copy JSON
               </button>
               <button id="debug-replay-toggle-btn" type="button" class="btn btn-secondary btn-sm"
                 title="Replay stroke from JSON">
-                ▶️ Replay Stroke
+                Replay Stroke
               </button>
             </div>
             <div id="debug-replay-box" class="debug-replay-box hidden">
@@ -178,8 +159,7 @@
               <button id="debug-run-replay-btn" type="button" class="btn btn-secondary btn-sm">Run Recognition</button>
             </div>
             <div class="debug-body" id="debug-content">
-              <p class="debug-placeholder">Draw and hold a stroke on the canvas to inspect candidate scores, structural
-                checks, orientation, and corner detection.</p>
+              <p class="debug-placeholder">Draw and hold a stroke to inspect candidate scores and telemetry.</p>
             </div>
           </div>
         </div>
@@ -190,11 +170,11 @@
 
       <!-- Floating Expand Button when Sidebar is Collapsed -->
       <button id="sidebar-expand-btn" class="sidebar-expand-btn hidden" title="Expand sidebar">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round">
           <path d="m9 18 6-6-6-6"></path>
         </svg>
-        Expressions
+        <span>Expressions</span>
       </button>
 
       <!-- Right Graph Area & Canvas -->
@@ -204,23 +184,23 @@
             aria-label="Interactive coordinate grid for drawing and recognizing geometric graphs"></canvas>
         </div>
 
-        <!-- Floating Graph Zoom Controls (+ / - / Home) -->
+        <!-- Floating Desmos-Style Square Zoom Controls (+ / - / Home) -->
         <div class="graph-controls-overlay">
           <button id="zoom-in-btn" class="graph-ctrl-btn" title="Zoom In (+)" aria-label="Zoom In">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
           </button>
           <button id="zoom-out-btn" class="graph-ctrl-btn" title="Zoom Out (-)" aria-label="Zoom Out">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
           </button>
           <button id="zoom-reset-btn" class="graph-ctrl-btn" title="Reset View (Default Zoom)" aria-label="Reset View">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
               <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
               <polyline points="9 22 9 12 15 12 15 22"></polyline>
@@ -231,7 +211,7 @@
         <!-- Status Hint Banner -->
         <div class="status-banner" id="status-banner" aria-live="polite">
           <span class="status-dot"></span>
-          <span id="status-text">Draw a shape and hold to snap. Keep dragging to adjust size and angle.</span>
+          <span id="status-text">Draw a shape and hold to snap. Drag to adjust size and angle.</span>
         </div>
       </section>
     </main>
