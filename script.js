@@ -330,25 +330,42 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
   switch (type) {
     case 'freehand': {
       const pts = geometry.points;
-      if (!pts || pts.length === 0) break;
-      if (pts.length === 1) {
-        const p = graphToCanvas(pts[0].x, pts[0].y, displayWidth, displayHeight);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, STYLES.strokeWidth / 2, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.beginPath();
-        const p0 = graphToCanvas(pts[0].x, pts[0].y, displayWidth, displayHeight);
-        ctx.moveTo(p0.x, p0.y);
-        for (let i = 1; i < pts.length; i++) {
-          const p = graphToCanvas(pts[i].x, pts[i].y, displayWidth, displayHeight);
-          ctx.lineTo(p.x, p.y);
+      const isFitted = shape.fitData && shape.fitData.success && shape.showFit !== false && shape.showOverlay !== false;
+      const showSketch = shape.showSketch !== false;
+
+      // 1. Original Sketch Stroke: rendered thinner in muted neutral tone when fitted
+      if (pts && pts.length > 0 && showSketch) {
+        ctx.save();
+        if (isFitted) {
+          ctx.strokeStyle = isSelected ? 'rgba(100, 116, 139, 0.85)' : 'rgba(148, 163, 184, 0.6)';
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.lineWidth = isSelected ? 1.8 : 1.4;
+        } else {
+          ctx.strokeStyle = color;
+          ctx.fillStyle = color;
+          ctx.lineWidth = isSelected ? STYLES.strokeWidth + 1 : STYLES.strokeWidth;
         }
-        ctx.stroke();
+
+        if (pts.length === 1) {
+          const p = graphToCanvas(pts[0].x, pts[0].y, displayWidth, displayHeight);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, (isSelected ? 2.5 : 2), 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.beginPath();
+          const p0 = graphToCanvas(pts[0].x, pts[0].y, displayWidth, displayHeight);
+          ctx.moveTo(p0.x, p0.y);
+          for (let i = 1; i < pts.length; i++) {
+            const p = graphToCanvas(pts[i].x, pts[i].y, displayWidth, displayHeight);
+            ctx.lineTo(p.x, p.y);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
       }
 
-      // Milestone 4: Fitted Function Curve Overlay (Emerald Green)
-      if (shape.fitData && shape.fitData.success && shape.showOverlay !== false) {
+      // 2. Fitted Function Curve Overlay (Prominent Emerald Green, ~2.4px thick)
+      if (isFitted) {
         const candidates = shape.fitData.candidates || [];
         const candidateIndex = (shape.selectedCandidateIndex >= 0 && shape.selectedCandidateIndex < candidates.length)
           ? shape.selectedCandidateIndex
@@ -357,8 +374,8 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
         const samples = cand ? (cand.plot_points || cand.plotting_samples || []) : [];
         if (cand && samples.length > 1) {
           ctx.save();
-          ctx.strokeStyle = '#10b981';
-          ctx.lineWidth = isSelected ? STYLES.strokeWidth + 2 : STYLES.strokeWidth + 1.5;
+          ctx.strokeStyle = isSelected ? '#059669' : '#10b981';
+          ctx.lineWidth = isSelected ? 3.0 : 2.4;
           ctx.beginPath();
           const firstPt = graphToCanvas(samples[0].x, samples[0].y, displayWidth, displayHeight);
           ctx.moveTo(firstPt.x, firstPt.y);
@@ -368,18 +385,20 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
           }
           ctx.stroke();
 
-          // Highlight domain boundary endpoints
-          const startPt = graphToCanvas(samples[0].x, samples[0].y, displayWidth, displayHeight);
-          const endPt = graphToCanvas(samples[samples.length - 1].x, samples[samples.length - 1].y, displayWidth, displayHeight);
-          [startPt, endPt].forEach(p => {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-            ctx.fillStyle = '#10b981';
-            ctx.fill();
-            ctx.lineWidth = 1.5;
-            ctx.strokeStyle = '#ffffff';
-            ctx.stroke();
-          });
+          // Domain boundary endpoint dots: rendered ONLY when item is selected/edited
+          if (isSelected) {
+            const startPt = graphToCanvas(samples[0].x, samples[0].y, displayWidth, displayHeight);
+            const endPt = graphToCanvas(samples[samples.length - 1].x, samples[samples.length - 1].y, displayWidth, displayHeight);
+            [startPt, endPt].forEach(p => {
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+              ctx.fillStyle = '#10b981';
+              ctx.fill();
+              ctx.lineWidth = 1.5;
+              ctx.strokeStyle = '#ffffff';
+              ctx.stroke();
+            });
+          }
           ctx.restore();
         }
       }
@@ -850,6 +869,27 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
     titleTag.appendChild(orientBadge);
   }
 
+  if (eqData.isApprox) {
+    const approxBadge = document.createElement('span');
+    approxBadge.className = 'badge-approx';
+    approxBadge.textContent = 'Approx';
+    titleTag.appendChild(approxBadge);
+  }
+
+  if (eqData.isManuallyAdjusted) {
+    const manualBadge = document.createElement('span');
+    manualBadge.className = 'badge-manual';
+    manualBadge.textContent = 'Manually adjusted';
+    titleTag.appendChild(manualBadge);
+  }
+
+  if (shape.fitStatus === 'invalidated') {
+    const movedBadge = document.createElement('span');
+    movedBadge.className = 'badge-invalidated';
+    movedBadge.textContent = 'Moved';
+    titleTag.appendChild(movedBadge);
+  }
+
   if (isPreview) {
     const previewBadge = document.createElement('span');
     previewBadge.className = 'fit-orient-badge';
@@ -945,6 +985,50 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       });
       errBox.appendChild(retryBtn);
       card.appendChild(errBox);
+    } else if (shape.fitStatus === 'invalidated') {
+      const invBox = document.createElement('div');
+      invBox.className = 'fit-rejection-box';
+      invBox.style.borderColor = '#fed7aa';
+      invBox.style.backgroundColor = '#fffbeb';
+      invBox.style.color = '#9a3412';
+      invBox.innerHTML = `
+        <div style="font-weight: 600; margin-bottom: 0.25rem;">Stroke Position Changed</div>
+        <div style="font-size: 0.75rem; line-height: 1.4;">This stroke was moved in Edit mode. The previous equation no longer matches the new position.</div>
+      `;
+      const actionRow = document.createElement('div');
+      actionRow.className = 'fit-action-row';
+      actionRow.style.marginTop = '0.4rem';
+
+      const refitBtn = document.createElement('button');
+      refitBtn.type = 'button';
+      refitBtn.className = 'btn-fit';
+      refitBtn.textContent = 'Refit Equation';
+      refitBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fitFreehandStroke(shape);
+      });
+      actionRow.appendChild(refitBtn);
+
+      if (shape.lastCommittedState) {
+        const restoreBtn = document.createElement('button');
+        restoreBtn.type = 'button';
+        restoreBtn.className = 'btn-toggle-sketch';
+        restoreBtn.textContent = 'Restore Original Position';
+        restoreBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          shape.geometry = JSON.parse(JSON.stringify(shape.lastCommittedState.baseGeometry));
+          shape.fitData = shape.lastCommittedState.baseFitData ? JSON.parse(JSON.stringify(shape.lastCommittedState.baseFitData)) : null;
+          shape.fitStatus = shape.lastCommittedState.baseFitStatus;
+          delete shape.lastCommittedState;
+          updateEquationsUI();
+          refreshPropertiesInputsIfSelected(shape.id);
+          render();
+        });
+        actionRow.appendChild(restoreBtn);
+      }
+
+      invBox.appendChild(actionRow);
+      card.appendChild(invBox);
     } else if (shape.fitStatus === 'rejected') {
       const rejBox = document.createElement('div');
       rejBox.className = 'fit-rejection-box';
@@ -987,7 +1071,8 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
           pill.className = `fit-candidate-pill ${idx === eqData.candidateIndex ? 'active' : ''}`;
           const orientTag = cand.orientation === 'x_of_y' ? ' [x=g(y)]' : '';
           const errVal = cand.geom_error !== undefined ? cand.geom_error : cand.rmse;
-          pill.innerHTML = `<span>${cand.family_name}${orientTag}</span> <span class="fit-rmse-tag">Err: ${errVal.toFixed(3)}</span>`;
+          const manualTag = cand.is_manually_adjusted ? ' *' : '';
+          pill.innerHTML = `<span>${cand.family_name}${orientTag}${manualTag}</span> <span class="fit-rmse-tag">Err: ${errVal.toFixed(3)}</span>`;
           pill.addEventListener('click', (e) => {
             e.stopPropagation();
             shape.selectedCandidateIndex = idx;
@@ -1012,26 +1097,47 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       statsDiv.className = 'equation-details-sub';
       const errVal = eqData.geomError !== undefined ? eqData.geomError : eqData.rmse;
       const orientText = eqData.isSideways ? 'x = g(y)' : 'y = f(x)';
-      statsDiv.innerHTML = `<span>Family: <strong>${eqData.familyName}</strong> (${orientText})</span> <span>R²: <strong>${eqData.rSquared.toFixed(3)}</strong></span> <span>Error: <strong>${errVal.toFixed(3)}</strong></span>`;
+      const adjustedText = eqData.isManuallyAdjusted ? ' | <strong>Manually adjusted</strong>' : '';
+      statsDiv.innerHTML = `<span>Family: <strong>${eqData.familyName}</strong> (${orientText})</span> <span>R²: <strong>${eqData.rSquared.toFixed(3)}</strong></span> <span>Error: <strong>${errVal.toFixed(3)}</strong></span>${adjustedText}`;
       mathBox.appendChild(statsDiv);
       card.appendChild(mathBox);
 
-      // Fit Actions Row
+      // Fit Actions Row (with separate Show sketch and Show fit controls)
       const actionRow = document.createElement('div');
       actionRow.className = 'fit-action-row';
 
-      const overlayBtn = document.createElement('button');
-      overlayBtn.type = 'button';
-      overlayBtn.className = `btn-toggle-overlay ${shape.showOverlay !== false ? 'active' : ''}`;
-      overlayBtn.textContent = shape.showOverlay !== false ? 'Overlay: Visible' : 'Overlay: Hidden';
-      overlayBtn.addEventListener('click', (e) => {
+      const sketchBtn = document.createElement('button');
+      sketchBtn.type = 'button';
+      sketchBtn.className = `btn-toggle-sketch ${shape.showSketch !== false ? 'active' : ''}`;
+      sketchBtn.textContent = shape.showSketch !== false ? 'Sketch: On' : 'Sketch: Off';
+      sketchBtn.title = 'Toggle visibility of original sketch';
+      sketchBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        shape.showOverlay = !(shape.showOverlay !== false);
-        overlayBtn.className = `btn-toggle-overlay ${shape.showOverlay ? 'active' : ''}`;
-        overlayBtn.textContent = shape.showOverlay ? 'Overlay: Visible' : 'Overlay: Hidden';
+        shape.showSketch = !(shape.showSketch !== false);
+        sketchBtn.className = `btn-toggle-sketch ${shape.showSketch ? 'active' : ''}`;
+        sketchBtn.textContent = shape.showSketch ? 'Sketch: On' : 'Sketch: Off';
+        refreshPropertiesInputsIfSelected(shape.id);
         render();
       });
-      actionRow.appendChild(overlayBtn);
+      actionRow.appendChild(sketchBtn);
+
+      const fitOverlayBtn = document.createElement('button');
+      fitOverlayBtn.type = 'button';
+      const isFitVisible = (shape.showFit !== false && shape.showOverlay !== false);
+      fitOverlayBtn.className = `btn-toggle-fit ${isFitVisible ? 'active' : ''}`;
+      fitOverlayBtn.textContent = isFitVisible ? 'Fit: On' : 'Fit: Off';
+      fitOverlayBtn.title = 'Toggle visibility of fitted equation curve';
+      fitOverlayBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const nextState = !isFitVisible;
+        shape.showFit = nextState;
+        shape.showOverlay = nextState;
+        fitOverlayBtn.className = `btn-toggle-fit ${nextState ? 'active' : ''}`;
+        fitOverlayBtn.textContent = nextState ? 'Fit: On' : 'Fit: Off';
+        refreshPropertiesInputsIfSelected(shape.id);
+        render();
+      });
+      actionRow.appendChild(fitOverlayBtn);
 
       const famSelect = document.createElement('select');
       famSelect.className = 'fit-family-select';
@@ -1071,6 +1177,21 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
 
       const actionRow = document.createElement('div');
       actionRow.className = 'fit-action-row';
+
+      const sketchBtn = document.createElement('button');
+      sketchBtn.type = 'button';
+      sketchBtn.className = `btn-toggle-sketch ${shape.showSketch !== false ? 'active' : ''}`;
+      sketchBtn.textContent = shape.showSketch !== false ? 'Sketch: On' : 'Sketch: Off';
+      sketchBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        shape.showSketch = !(shape.showSketch !== false);
+        sketchBtn.className = `btn-toggle-sketch ${shape.showSketch ? 'active' : ''}`;
+        sketchBtn.textContent = shape.showSketch ? 'Sketch: On' : 'Sketch: Off';
+        refreshPropertiesInputsIfSelected(shape.id);
+        render();
+      });
+      actionRow.appendChild(sketchBtn);
+
       const fitBtn = document.createElement('button');
       fitBtn.type = 'button';
       fitBtn.className = 'btn-fit';
@@ -1297,8 +1418,92 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
 }
 
 // ==========================================
-// 8. NUMERICAL SHAPE PROPERTIES PANEL
+// 8. NUMERICAL SHAPE & CURVE PROPERTIES PANEL
 // ==========================================
+
+/**
+ * Computes common 2D Euclidean point-to-curve RMS distance in graph space.
+ * Matches backend geometric distance calculation for exact orientation-independent evaluation.
+ */
+function computeCurveGeometricError(strokePts, curvePts) {
+  if (!strokePts || strokePts.length === 0 || !curvePts || curvePts.length < 2) {
+    return 0;
+  }
+  let sumMinDistSq = 0;
+  for (let i = 0; i < strokePts.length; i++) {
+    const px = strokePts[i].x;
+    const py = strokePts[i].y;
+    let minDistSq = Infinity;
+    for (let j = 0; j < curvePts.length - 1; j++) {
+      const p1 = curvePts[j];
+      const p2 = curvePts[j + 1];
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const l2 = dx * dx + dy * dy;
+      let t = 0;
+      if (l2 > 1e-8) {
+        t = ((px - p1.x) * dx + (py - p1.y) * dy) / l2;
+        t = Math.max(0, Math.min(1, t));
+      }
+      const projX = p1.x + t * dx;
+      const projY = p1.y + t * dy;
+      const distSq = (px - projX) ** 2 + (py - projY) ** 2;
+      if (distSq < minDistSq) minDistSq = distSq;
+    }
+    sumMinDistSq += minDistSq;
+  }
+  return Math.sqrt(sumMinDistSq / strokePts.length);
+}
+
+/**
+ * Samples a mathematical equation directly from its parameters across its domain.
+ * Generates fresh plot points rather than distorting sampled points.
+ */
+function sampleCurvePoints(family, params, domain, orientation = 'y_of_x', numPoints = 180) {
+  const uMin = (domain && domain.length >= 2) ? domain[0] : -10;
+  const uMax = (domain && domain.length >= 2) ? domain[1] : 10;
+  const fam = (family || 'linear').toLowerCase().replace(/\s+/g, '_');
+  const pts = [];
+
+  const m = params.m ?? 1, b = params.b ?? 0;
+  const a = params.a ?? 1, quadB = params.b ?? 0, c = params.c ?? 0, d = params.d ?? 0;
+  const h = params.h ?? 0, k = params.k ?? 0;
+  const A = params.A ?? 1, B = params.B ?? 1, C = params.C ?? 0, D = params.D ?? 0;
+
+  for (let i = 0; i < numPoints; i++) {
+    const t = i / (numPoints - 1);
+    const u = uMin + t * (uMax - uMin);
+    let v = 0;
+
+    switch (fam) {
+      case 'linear':
+        v = m * u + b;
+        break;
+      case 'quadratic':
+        v = a * u * u + quadB * u + c;
+        break;
+      case 'cubic':
+        v = a * u * u * u + quadB * u * u + c * u + d;
+        break;
+      case 'absolute_value':
+        v = a * Math.abs(u - h) + k;
+        break;
+      case 'sine':
+        v = A * Math.sin(B * u + C) + D;
+        break;
+      default:
+        v = m * u + b;
+        break;
+    }
+
+    if (orientation === 'x_of_y') {
+      pts.push({ x: v, y: u });
+    } else {
+      pts.push({ x: u, y: v });
+    }
+  }
+  return pts;
+}
 
 function formatNumForInput(val) {
   if (val === null || val === undefined || isNaN(val)) return '0';
@@ -1358,7 +1563,11 @@ function getNumericFieldValue(inputId, originalVal) {
   if (trimmed === '') throw new Error('Input field cannot be empty');
   const parsed = parseFloat(trimmed);
   if (isNaN(parsed) || !isFinite(parsed)) throw new Error('Must be a valid finite number');
-  // If user did not change the formatted string, keep original full-precision value
+  // If user did not change the input, preserve untouched full precision
+  const originalStr = input.dataset.originalVal;
+  if (originalStr && trimmed === originalStr) {
+    return originalVal;
+  }
   if (trimmed === formatNumForInput(originalVal)) {
     return originalVal;
   }
@@ -1366,195 +1575,539 @@ function getNumericFieldValue(inputId, originalVal) {
 }
 
 /**
- * Renders the numerical property inputs for the selected shape.
+ * Applies numerical parameter and domain edits to a fitted curve.
+ */
+function applyCurveProperties(shape) {
+  if (!shape || shape.type !== 'freehand' || !shape.fitData || !shape.fitData.candidates) return;
+  const candidates = shape.fitData.candidates;
+  const selectedIdx = shape.selectedCandidateIndex || 0;
+  const cand = candidates[selectedIdx] || candidates[0];
+  if (!cand) return;
+
+  const fam = (cand.family || 'linear').toLowerCase().replace(/\s+/g, '_');
+  const orientation = cand.orientation || 'y_of_x';
+  const originalParams = cand.params || {};
+  const newParams = {};
+
+  try {
+    // 1. Read family parameters
+    switch (fam) {
+      case 'linear': {
+        newParams.m = getNumericFieldValue('prop-curve-m', originalParams.m ?? 1);
+        newParams.b = getNumericFieldValue('prop-curve-b', originalParams.b ?? 0);
+        break;
+      }
+      case 'quadratic': {
+        newParams.a = getNumericFieldValue('prop-curve-a', originalParams.a ?? 1);
+        newParams.b = getNumericFieldValue('prop-curve-b', originalParams.b ?? 0);
+        newParams.c = getNumericFieldValue('prop-curve-c', originalParams.c ?? 0);
+        if (Math.abs(newParams.a) < 1e-6) {
+          throw new Error('Quadratic leading coefficient (a) cannot be 0.');
+        }
+        break;
+      }
+      case 'cubic': {
+        newParams.a = getNumericFieldValue('prop-curve-a', originalParams.a ?? 1);
+        newParams.b = getNumericFieldValue('prop-curve-b', originalParams.b ?? 0);
+        newParams.c = getNumericFieldValue('prop-curve-c', originalParams.c ?? 0);
+        newParams.d = getNumericFieldValue('prop-curve-d', originalParams.d ?? 0);
+        if (Math.abs(newParams.a) < 1e-6) {
+          throw new Error('Cubic leading coefficient (a) cannot be 0.');
+        }
+        break;
+      }
+      case 'absolute_value': {
+        newParams.a = getNumericFieldValue('prop-curve-a', originalParams.a ?? 1);
+        newParams.h = getNumericFieldValue('prop-curve-h', originalParams.h ?? 0);
+        newParams.k = getNumericFieldValue('prop-curve-k', originalParams.k ?? 0);
+        if (Math.abs(newParams.a) < 1e-6) {
+          throw new Error('Absolute value scale factor (a) cannot be 0.');
+        }
+        break;
+      }
+      case 'sine': {
+        newParams.A = getNumericFieldValue('prop-curve-A', originalParams.A ?? 1);
+        newParams.B = getNumericFieldValue('prop-curve-B', originalParams.B ?? 1);
+        newParams.C = getNumericFieldValue('prop-curve-C', originalParams.C ?? 0);
+        newParams.D = getNumericFieldValue('prop-curve-D', originalParams.D ?? 0);
+        if (Math.abs(newParams.A) < 1e-6) {
+          throw new Error('Sine amplitude (A) cannot be 0.');
+        }
+        if (Math.abs(newParams.B) < 1e-6) {
+          throw new Error('Sine angular frequency (ω) cannot be 0.');
+        }
+        break;
+      }
+      default: {
+        for (const [k, v] of Object.entries(originalParams)) {
+          newParams[k] = getNumericFieldValue(`prop-curve-${k}`, v);
+        }
+        break;
+      }
+    }
+
+    // 2. Read interval restrictions
+    const origDomain = cand.domain || [-10, 10];
+    const domMin = getNumericFieldValue('prop-curve-dom-min', origDomain[0]);
+    const domMax = getNumericFieldValue('prop-curve-dom-max', origDomain[1]);
+
+    if (domMin >= domMax) {
+      throw new Error('Interval Min must be strictly less than Interval Max.');
+    }
+
+    // 3. Update candidate
+    cand.params = newParams;
+    cand.domain = [domMin, domMax];
+    cand.is_manually_adjusted = true;
+
+    // 4. Regenerate plotted curve samples directly from mathematical equation
+    const newPlotPoints = sampleCurvePoints(cand.family, newParams, cand.domain, orientation, 180);
+    cand.plot_points = newPlotPoints;
+
+    // 5. Update LaTeX & Plain Text equation strings
+    if (typeof formatFittedEquation === 'function') {
+      const formatted = formatFittedEquation(cand.family, newParams, cand.domain, orientation);
+      cand.latex = formatted.latex;
+      cand.text = formatted.text;
+      cand.latex_without_domain = formatted.latexWithoutDomain;
+      cand.text_without_domain = formatted.textWithoutDomain;
+    }
+
+    // 6. Recalculate 2D geometric error against original sketch reference
+    const strokePts = shape.geometry.points || shape.rawPoints || [];
+    const newGeomError = computeCurveGeometricError(strokePts, newPlotPoints);
+    cand.geom_error = newGeomError;
+    cand.rmse = newGeomError;
+
+    // 7. Refresh UI
+    showPropertySuccess('Parameters applied and curve updated.');
+    renderShapePropertiesUI(shape);
+    updateEquationsUI();
+    render();
+  } catch (err) {
+    showPropertyError(err.message || 'Invalid curve parameter value.');
+  }
+}
+
+/**
+ * Cancels pending property edits and reverts inputs to stored values.
+ */
+function cancelCurveProperties(shape) {
+  if (!shape) return;
+  renderShapePropertiesUI(shape);
+  showPropertySuccess('Changes reverted.');
+}
+
+/**
+ * Resets a manually adjusted candidate back to its initial automatic parameters.
+ */
+function resetCurveToAuto(shape) {
+  if (!shape || !shape.fitData || !shape.fitData.candidates) return;
+  const candidates = shape.fitData.candidates;
+  const selectedIdx = shape.selectedCandidateIndex || 0;
+  const cand = candidates[selectedIdx] || candidates[0];
+  if (!cand || !cand._originalAutoParams) return;
+
+  cand.params = JSON.parse(JSON.stringify(cand._originalAutoParams.params));
+  cand.domain = [...cand._originalAutoParams.domain];
+  cand.geom_error = cand._originalAutoParams.geom_error;
+  cand.rmse = cand._originalAutoParams.geom_error;
+  cand.plot_points = JSON.parse(JSON.stringify(cand._originalAutoParams.plot_points));
+  cand.is_manually_adjusted = false;
+
+  if (typeof formatFittedEquation === 'function') {
+    const formatted = formatFittedEquation(cand.family, cand.params, cand.domain, cand.orientation);
+    cand.latex = formatted.latex;
+    cand.text = formatted.text;
+    cand.latex_without_domain = formatted.latexWithoutDomain;
+    cand.text_without_domain = formatted.textWithoutDomain;
+  }
+
+  showPropertySuccess('Reset to automatic fit parameters.');
+  renderShapePropertiesUI(shape);
+  updateEquationsUI();
+  render();
+}
+
+/**
+ * Live preview of curve parameters while typing before applying.
+ */
+function previewLiveCurveProperties(shape) {
+  if (!shape || shape.type !== 'freehand' || !shape.fitData || !shape.fitData.candidates) return;
+  const candidates = shape.fitData.candidates;
+  const selectedIdx = (shape.selectedCandidateIndex >= 0 && shape.selectedCandidateIndex < candidates.length)
+    ? shape.selectedCandidateIndex
+    : 0;
+  const cand = candidates[selectedIdx] || candidates[0];
+  if (!cand) return;
+
+  const fam = (cand.family || 'linear').toLowerCase().replace(/\s+/g, '_');
+  const orientation = cand.orientation || 'y_of_x';
+  const origParams = cand.params || {};
+  const tempParams = {};
+
+  try {
+    switch (fam) {
+      case 'linear': {
+        const m = parseFloat(document.getElementById('prop-curve-m')?.value);
+        const b = parseFloat(document.getElementById('prop-curve-b')?.value);
+        if (isNaN(m) || isNaN(b)) return;
+        tempParams.m = m; tempParams.b = b;
+        break;
+      }
+      case 'quadratic': {
+        const a = parseFloat(document.getElementById('prop-curve-a')?.value);
+        const b = parseFloat(document.getElementById('prop-curve-b')?.value);
+        const c = parseFloat(document.getElementById('prop-curve-c')?.value);
+        if (isNaN(a) || isNaN(b) || isNaN(c) || Math.abs(a) < 1e-6) return;
+        tempParams.a = a; tempParams.b = b; tempParams.c = c;
+        break;
+      }
+      case 'cubic': {
+        const a = parseFloat(document.getElementById('prop-curve-a')?.value);
+        const b = parseFloat(document.getElementById('prop-curve-b')?.value);
+        const c = parseFloat(document.getElementById('prop-curve-c')?.value);
+        const d = parseFloat(document.getElementById('prop-curve-d')?.value);
+        if (isNaN(a) || isNaN(b) || isNaN(c) || isNaN(d) || Math.abs(a) < 1e-6) return;
+        tempParams.a = a; tempParams.b = b; tempParams.c = c; tempParams.d = d;
+        break;
+      }
+      case 'absolute_value': {
+        const a = parseFloat(document.getElementById('prop-curve-a')?.value);
+        const h = parseFloat(document.getElementById('prop-curve-h')?.value);
+        const k = parseFloat(document.getElementById('prop-curve-k')?.value);
+        if (isNaN(a) || isNaN(h) || isNaN(k) || Math.abs(a) < 1e-6) return;
+        tempParams.a = a; tempParams.h = h; tempParams.k = k;
+        break;
+      }
+      case 'sine': {
+        const A = parseFloat(document.getElementById('prop-curve-A')?.value);
+        const B = parseFloat(document.getElementById('prop-curve-B')?.value);
+        const C = parseFloat(document.getElementById('prop-curve-C')?.value);
+        const D = parseFloat(document.getElementById('prop-curve-D')?.value);
+        if (isNaN(A) || isNaN(B) || isNaN(C) || isNaN(D) || Math.abs(A) < 1e-6 || Math.abs(B) < 1e-6) return;
+        tempParams.A = A; tempParams.B = B; tempParams.C = C; tempParams.D = D;
+        break;
+      }
+      default:
+        return;
+    }
+
+    const minInp = parseFloat(document.getElementById('prop-curve-dom-min')?.value);
+    const maxInp = parseFloat(document.getElementById('prop-curve-dom-max')?.value);
+    const tempDomain = (!isNaN(minInp) && !isNaN(maxInp) && minInp < maxInp) ? [minInp, maxInp] : (cand.domain || [-10, 10]);
+
+    cand.plot_points = sampleCurvePoints(cand.family, tempParams, tempDomain, orientation, 180);
+    render();
+  } catch (_) {}
+}
+
+/**
+ * Candidate selector from Curve Properties panel.
+ */
+function selectCandidateFromProperties(shapeId, candidateIdx) {
+  const shape = shapes.find(s => s.id === shapeId);
+  if (!shape || !shape.fitData || !shape.fitData.candidates) return;
+  shape.selectedCandidateIndex = candidateIdx;
+  updateEquationsUI();
+  renderShapePropertiesUI(shape);
+  render();
+}
+
+/**
+ * Main properties panel renderer for both recognised shapes and fitted curves.
  */
 function renderShapePropertiesUI(shape) {
-  if (!propertiesCard || !propertiesBody || !propertiesShapeBadge) return;
+  if (!propertiesBody) return;
 
   if (!shape) {
-    propertiesCard.classList.add('hidden');
-    propertiesBody.innerHTML = '';
+    propertiesBody.innerHTML = `
+      <div class="properties-placeholder">
+        Select a shape or fitted curve in Edit mode to view and adjust its mathematical properties.
+      </div>
+    `;
     return;
   }
 
-  propertiesCard.classList.remove('hidden');
-
   const { type, geometry } = shape;
-  propertiesShapeBadge.textContent = shape.label || capitalize(type);
 
+  // 1. FREEHAND STROKE / FITTED CURVE
   if (type === 'freehand') {
-    const pts = geometry.points || shape.rawPoints || [];
-    const ptCount = pts.length;
-    let xMin = 0, xMax = 0, yMin = 0, yMax = 0;
-    if (ptCount > 0) {
-      xMin = Math.min(...pts.map(p => p.x));
-      xMax = Math.max(...pts.map(p => p.x));
-      yMin = Math.min(...pts.map(p => p.y));
-      yMax = Math.max(...pts.map(p => p.y));
+    if (shape.fitStatus === 'invalidated') {
+      propertiesBody.innerHTML = `
+        <div class="properties-form">
+          <div class="properties-info-row" style="flex-direction: column; align-items: flex-start; gap: 0.4rem; background: #fffbeb; border: 1px solid #fed7aa; color: #9a3412;">
+            <div style="font-weight: 600;">Stroke Position Changed</div>
+            <div style="font-size: 0.75rem; line-height: 1.4;">This stroke was moved in Edit mode. The previous equation no longer matches the new position.</div>
+          </div>
+          <div class="properties-actions" style="margin-top: 0.75rem;">
+            <button type="button" id="prop-refit-btn" class="btn btn-primary" title="Refit equation at current position">Refit Equation</button>
+            ${shape.lastCommittedState ? '<button type="button" id="prop-restore-btn" class="btn btn-secondary" title="Restore previous position">Restore Original Position</button>' : ''}
+          </div>
+        </div>
+      `;
+      const refitBtn = document.getElementById('prop-refit-btn');
+      if (refitBtn) {
+        refitBtn.addEventListener('click', () => fitFreehandStroke(shape));
+      }
+      const restoreBtn = document.getElementById('prop-restore-btn');
+      if (restoreBtn && shape.lastCommittedState) {
+        restoreBtn.addEventListener('click', () => {
+          shape.geometry = JSON.parse(JSON.stringify(shape.lastCommittedState.baseGeometry));
+          shape.fitData = shape.lastCommittedState.baseFitData ? JSON.parse(JSON.stringify(shape.lastCommittedState.baseFitData)) : null;
+          shape.fitStatus = shape.lastCommittedState.baseFitStatus;
+          delete shape.lastCommittedState;
+          updateEquationsUI();
+          renderShapePropertiesUI(shape);
+          render();
+        });
+      }
+      return;
     }
 
-    const isFitted = shape.fitData && shape.fitData.success && shape.fitData.candidates && shape.fitData.candidates.length > 0;
-    const candidates = isFitted ? shape.fitData.candidates : [];
-    const selectedIdx = shape.selectedCandidateIndex || 0;
-    const activeCand = isFitted ? (candidates[selectedIdx] || candidates[0]) : null;
+    if (shape.fitStatus === 'success' && shape.fitData && shape.fitData.candidates && shape.fitData.candidates.length > 0) {
+      const candidates = shape.fitData.candidates;
+      const selectedIdx = (shape.selectedCandidateIndex >= 0 && shape.selectedCandidateIndex < candidates.length)
+        ? shape.selectedCandidateIndex
+        : 0;
+      const cand = candidates[selectedIdx] || candidates[0];
+      const fam = (cand.family || 'linear').toLowerCase().replace(/\s+/g, '_');
+      const isSideways = (cand.orientation === 'x_of_y');
+      const indepVar = isSideways ? 'y' : 'x';
+      const depVar = isSideways ? 'x' : 'y';
+      const p = cand.params || {};
+      const dom = cand.domain || [-10, 10];
+      const isManual = !!cand.is_manually_adjusted;
+      const errVal = (cand.geom_error !== undefined ? cand.geom_error : cand.rmse) || 0;
 
-    let fitSectionHtml = '';
-    if (shape.fitStatus === 'loading') {
-      fitSectionHtml = `
-        <div class="fit-loading-box" style="margin-top: 0.5rem; margin-left: 0;">
-          <div class="fit-spinner"></div>
-          <span>Fitting curve equation...</span>
-        </div>
-      `;
-    } else if (shape.fitStatus === 'rejected') {
-      const isParam = !!shape.fitData?.is_parametric_needed;
-      const reason = shape.fitData?.rejection_reason || 'Curve could not be approximated by supported function families.';
-      const retryBtnHtml = isParam ? '' : `<button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.4rem; padding: 0.25rem 0.6rem;">Try Again</button>`;
-      fitSectionHtml = `
-        <div class="fit-rejection-box" style="margin-top: 0.5rem; margin-left: 0;">
-          <div style="font-weight: 600; margin-bottom: 0.25rem;">Curve Not Fitted</div>
-          <div style="font-size: 0.75rem; line-height: 1.4;">${reason}</div>
-          ${retryBtnHtml}
-        </div>
-      `;
-    } else if (shape.fitStatus === 'error') {
-      fitSectionHtml = `
-        <div class="fit-rejection-box" style="margin-top: 0.5rem; margin-left: 0; border-color: #fca5a5; background-color: #fef2f2; color: #b91c1c;">
-          <div style="font-weight: 600; margin-bottom: 0.25rem;">Fitting Service Notice</div>
-          <div style="font-size: 0.75rem; line-height: 1.4;">${shape.fitError || 'Ensure Python backend is running on port 8001.'}</div>
-          <button type="button" class="btn-fit" id="prop-refit-btn" style="margin-top: 0.4rem; padding: 0.25rem 0.6rem;">Retry Connection</button>
-        </div>
-      `;
-    } else if (isFitted && activeCand) {
-      let paramsHtml = '';
-      const params = activeCand.params || activeCand.parameters || {};
-      for (const [key, val] of Object.entries(params)) {
-        paramsHtml += `
-          <div class="property-group">
-            <label class="property-label">${key}</label>
-            <input type="text" class="property-input" readonly value="${val.toFixed(6)}" style="background: #f3f4f6; color: #6b7280;" />
-          </div>
-        `;
+      // Ensure original params are backed up on the candidate for "Reset to Auto"
+      if (!cand._originalAutoParams) {
+        cand._originalAutoParams = {
+          params: JSON.parse(JSON.stringify(cand.params || {})),
+          domain: [...dom],
+          geom_error: cand.geom_error ?? cand.rmse,
+          plot_points: JSON.parse(JSON.stringify(cand.plot_points || []))
+        };
       }
 
-      let candPillsHtml = '';
-      if (candidates.length > 1) {
-        candPillsHtml = `
-          <div style="margin-top: 0.4rem; margin-bottom: 0.4rem;">
-            <label class="property-label">Candidate Family:</label>
-            <div class="fit-candidates-container" style="margin-top: 0.2rem; margin-left: 0;">
-              ${candidates.map((c, i) => {
-          const orientTag = c.orientation === 'x_of_y' ? ' [x=g(y)]' : '';
-          const errVal = c.geom_error !== undefined ? c.geom_error : c.rmse;
-          return `
-                <button type="button" class="fit-candidate-pill ${i === selectedIdx ? 'active' : ''}" data-cand-idx="${i}">
-                  <span>${c.family_name}${orientTag}</span>
-                  <span class="fit-rmse-tag">Err: ${errVal.toFixed(3)}</span>
-                </button>
-              `;
-        }).join('')}
+      let familyFieldsHtml = '';
+      let conventionNote = '';
+
+      switch (fam) {
+        case 'linear': {
+          conventionNote = `${depVar} = m · ${indepVar} + b`;
+          familyFieldsHtml = `
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-m">Slope (m)</label>
+              <input type="number" step="any" id="prop-curve-m" class="property-input" value="${formatNumForInput(p.m ?? 1)}" data-original-val="${formatNumForInput(p.m ?? 1)}" />
             </div>
-          </div>
-        `;
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-b">Intercept (b)</label>
+              <input type="number" step="any" id="prop-curve-b" class="property-input" value="${formatNumForInput(p.b ?? 0)}" data-original-val="${formatNumForInput(p.b ?? 0)}" />
+            </div>
+          `;
+          break;
+        }
+        case 'quadratic': {
+          conventionNote = `${depVar} = a · ${indepVar}² + b · ${indepVar} + c`;
+          familyFieldsHtml = `
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-a">Coefficient (a)</label>
+              <input type="number" step="any" id="prop-curve-a" class="property-input" value="${formatNumForInput(p.a ?? 1)}" data-original-val="${formatNumForInput(p.a ?? 1)}" />
+            </div>
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-b">Coefficient (b)</label>
+              <input type="number" step="any" id="prop-curve-b" class="property-input" value="${formatNumForInput(p.b ?? 0)}" data-original-val="${formatNumForInput(p.b ?? 0)}" />
+            </div>
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-c">Constant (c)</label>
+              <input type="number" step="any" id="prop-curve-c" class="property-input" value="${formatNumForInput(p.c ?? 0)}" data-original-val="${formatNumForInput(p.c ?? 0)}" />
+            </div>
+          `;
+          break;
+        }
+        case 'cubic': {
+          conventionNote = `${depVar} = a · ${indepVar}³ + b · ${indepVar}² + c · ${indepVar} + d`;
+          familyFieldsHtml = `
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-a">Coefficient (a)</label>
+              <input type="number" step="any" id="prop-curve-a" class="property-input" value="${formatNumForInput(p.a ?? 1)}" data-original-val="${formatNumForInput(p.a ?? 1)}" />
+            </div>
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-b">Coefficient (b)</label>
+              <input type="number" step="any" id="prop-curve-b" class="property-input" value="${formatNumForInput(p.b ?? 0)}" data-original-val="${formatNumForInput(p.b ?? 0)}" />
+            </div>
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-c">Coefficient (c)</label>
+              <input type="number" step="any" id="prop-curve-c" class="property-input" value="${formatNumForInput(p.c ?? 0)}" data-original-val="${formatNumForInput(p.c ?? 0)}" />
+            </div>
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-d">Constant (d)</label>
+              <input type="number" step="any" id="prop-curve-d" class="property-input" value="${formatNumForInput(p.d ?? 0)}" data-original-val="${formatNumForInput(p.d ?? 0)}" />
+            </div>
+          `;
+          break;
+        }
+        case 'absolute_value': {
+          conventionNote = `${depVar} = a · |${indepVar} - h| + k`;
+          familyFieldsHtml = `
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-a">Scale (a)</label>
+              <input type="number" step="any" id="prop-curve-a" class="property-input" value="${formatNumForInput(p.a ?? 1)}" data-original-val="${formatNumForInput(p.a ?? 1)}" />
+            </div>
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-h">Shift (${indepVar === 'x' ? 'h' : 'k'})</label>
+              <input type="number" step="any" id="prop-curve-h" class="property-input" value="${formatNumForInput(p.h ?? 0)}" data-original-val="${formatNumForInput(p.h ?? 0)}" />
+            </div>
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-k">Shift (${depVar === 'y' ? 'k' : 'h'})</label>
+              <input type="number" step="any" id="prop-curve-k" class="property-input" value="${formatNumForInput(p.k ?? 0)}" data-original-val="${formatNumForInput(p.k ?? 0)}" />
+            </div>
+          `;
+          break;
+        }
+        case 'sine': {
+          conventionNote = `${depVar} = A · sin(B · ${indepVar} + C) + D`;
+          familyFieldsHtml = `
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-A">Amplitude (A)</label>
+              <input type="number" step="any" id="prop-curve-A" class="property-input" value="${formatNumForInput(p.A ?? 1)}" data-original-val="${formatNumForInput(p.A ?? 1)}" />
+            </div>
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-B">Frequency (B / ω)</label>
+              <input type="number" step="any" id="prop-curve-B" class="property-input" value="${formatNumForInput(p.B ?? 1)}" data-original-val="${formatNumForInput(p.B ?? 1)}" />
+            </div>
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-C">Phase (C / φ)</label>
+              <input type="number" step="any" id="prop-curve-C" class="property-input" value="${formatNumForInput(p.C ?? 0)}" data-original-val="${formatNumForInput(p.C ?? 0)}" />
+            </div>
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-D">Offset (D / k)</label>
+              <input type="number" step="any" id="prop-curve-D" class="property-input" value="${formatNumForInput(p.D ?? 0)}" data-original-val="${formatNumForInput(p.D ?? 0)}" />
+            </div>
+          `;
+          break;
+        }
+        default: {
+          conventionNote = `${depVar} = f(${indepVar})`;
+          familyFieldsHtml = Object.entries(p).map(([k, v]) => `
+            <div class="property-group">
+              <label class="property-label" for="prop-curve-${k}">Param ${k}</label>
+              <input type="number" step="any" id="prop-curve-${k}" class="property-input" value="${formatNumForInput(v)}" data-original-val="${formatNumForInput(v)}" />
+            </div>
+          `).join('');
+          break;
+        }
       }
 
-      const warnHtml = activeCand.is_poor_fit ? `
-        <div class="fit-warning-box" style="margin-left: 0;">
-          <span>${activeCand.warning || 'Poor fit: Model does not match stroke geometry well.'}</span>
+      const domainFieldsHtml = `
+        <div class="property-group">
+          <label class="property-label" for="prop-curve-dom-min">Domain Min (${indepVar} min)</label>
+          <input type="number" step="any" id="prop-curve-dom-min" class="property-input" value="${formatNumForInput(dom[0])}" data-original-val="${formatNumForInput(dom[0])}" />
+        </div>
+        <div class="property-group">
+          <label class="property-label" for="prop-curve-dom-max">Domain Max (${indepVar} max)</label>
+          <input type="number" step="any" id="prop-curve-dom-max" class="property-input" value="${formatNumForInput(dom[1])}" data-original-val="${formatNumForInput(dom[1])}" />
+        </div>
+      `;
+
+      const candidatePillsHtml = candidates.length > 1 ? `
+        <div style="margin-bottom: 0.6rem;">
+          <div style="font-size: 0.72rem; color: #64748b; margin-bottom: 0.3rem; font-weight: 500;">Candidate Family:</div>
+          <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+            ${candidates.map((c, idx) => `
+              <button type="button" class="btn ${idx === selectedIdx ? 'btn-primary' : 'btn-secondary'}" style="font-size: 0.72rem; padding: 0.2rem 0.45rem;" onclick="selectCandidateFromProperties(${shape.id}, ${idx})">
+                ${c.family_name}${c.orientation === 'x_of_y' ? ' [x=g(y)]' : ''}${c.is_manually_adjusted ? ' *' : ''}
+              </button>
+            `).join('')}
+          </div>
         </div>
       ` : '';
 
-      const errVal = activeCand.geom_error !== undefined ? activeCand.geom_error : activeCand.rmse;
-      const orientLabel = activeCand.orientation === 'x_of_y' ? 'x = g(y) (Sideways)' : 'y = f(x)';
-
-      fitSectionHtml = `
-        <div class="fit-card-section" style="margin-top: 0.5rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
-            <span style="font-size: 0.8rem; font-weight: 600; color: var(--accent-primary);">Fitted Model: ${activeCand.family_name}</span>
-            <span class="fit-rmse-tag" style="background: rgba(45, 146, 56, 0.1); color: var(--accent-primary); border: 1px solid rgba(45, 146, 56, 0.3);">Error: ${errVal.toFixed(4)}</span>
+      propertiesBody.innerHTML = `
+        <form class="properties-form" id="properties-form" onsubmit="return false;">
+          ${candidatePillsHtml}
+          <div style="font-size: 0.75rem; color: #475569; margin-bottom: 0.45rem; font-family: 'JetBrains Mono', monospace; background: #f8fafc; padding: 0.35rem 0.5rem; border-radius: 4px; border: 1px solid #e2e8f0;">
+            Convention: <strong>${conventionNote}</strong>
           </div>
-          <div style="font-size: 0.72rem; color: #6b7280; margin-bottom: 0.3rem;">Orientation: <strong>${orientLabel}</strong> | R²: <strong>${activeCand.r_squared.toFixed(3)}</strong></div>
-          ${warnHtml}
-          ${candPillsHtml}
-          <div class="properties-grid" style="margin-top: 0.4rem;">
-            ${paramsHtml}
+          <div class="properties-grid">
+            ${familyFieldsHtml}
+            ${domainFieldsHtml}
           </div>
-          <div class="fit-action-row" style="margin-top: 0.5rem; margin-left: 0;">
-            <button type="button" class="btn-toggle-overlay ${shape.showOverlay !== false ? 'active' : ''}" id="prop-toggle-overlay-btn">
-              ${shape.showOverlay !== false ? 'Overlay: Visible' : 'Overlay: Hidden'}
+          <div class="properties-info-row">
+            <span>Family: <strong>${cand.family_name}</strong> (${isSideways ? 'x = g(y)' : 'y = f(x)'})</span>
+            <span>2D Error: <strong>${errVal.toFixed(3)}</strong></span>
+            ${isManual ? '<span class="badge-manual" style="margin-left:auto;">Manually adjusted</span>' : ''}
+          </div>
+          <div id="properties-error" class="properties-error hidden" role="alert"></div>
+          <div id="properties-success" class="properties-success hidden" role="status"></div>
+          <div class="properties-actions">
+            <button type="button" id="properties-apply-btn" class="btn btn-primary" title="Apply precise numerical curve parameters">
+              Apply Parameters
             </button>
-            <select class="fit-family-select" id="prop-family-select" title="Refit with specific family">
-              <option value="">Auto Best Fit</option>
-              <option value="linear">Linear</option>
-              <option value="quadratic">Quadratic</option>
-              <option value="cubic">Cubic</option>
-              <option value="absolute_value">Absolute Value</option>
-              <option value="sine">Sine Wave</option>
-            </select>
-            <button type="button" class="btn-fit" id="prop-refit-btn" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;">Refit</button>
+            <button type="button" id="properties-cancel-btn" class="btn btn-secondary" title="Revert to current parameters">
+              Cancel
+            </button>
+            ${isManual ? `
+              <button type="button" id="properties-reset-auto-btn" class="btn btn-secondary" style="font-size: 0.75rem;" title="Reset back to automatic fit parameters">
+                Reset to Auto
+              </button>
+            ` : ''}
           </div>
-        </div>
+          <div class="properties-note">💡 Curve parameters update in graph space. Press Enter to apply.</div>
+        </form>
       `;
-    } else {
-      fitSectionHtml = `
-        <div class="fit-action-row" style="margin-top: 0.5rem; margin-left: 0;">
-          <button type="button" class="btn-fit" id="prop-fit-btn" style="width: 100%; justify-content: center;">
-            Fit equation
-          </button>
-        </div>
-      `;
+
+      const applyBtn = document.getElementById('properties-apply-btn');
+      const cancelBtn = document.getElementById('properties-cancel-btn');
+      const resetBtn = document.getElementById('properties-reset-auto-btn');
+
+      if (applyBtn) applyBtn.addEventListener('click', () => applyCurveProperties(shape));
+      if (cancelBtn) cancelBtn.addEventListener('click', () => cancelCurveProperties(shape));
+      if (resetBtn) resetBtn.addEventListener('click', () => resetCurveToAuto(shape));
+
+      const inputs = propertiesBody.querySelectorAll('.property-input');
+      inputs.forEach(inp => {
+        inp.addEventListener('input', () => previewLiveCurveProperties(shape));
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            applyCurveProperties(shape);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelCurveProperties(shape);
+          }
+        });
+      });
+      return;
     }
 
+    // Freehand stroke not fitted or loading
+    const strokePts = shape.geometry.points || [];
     propertiesBody.innerHTML = `
       <div class="properties-form">
         <div class="properties-info-row">
           <span>Type: <strong>Freehand Stroke</strong></span>
-          <span>Points: <strong>${ptCount}</strong></span>
+          <span>Points: <strong>${strokePts.length}</strong></span>
         </div>
-        <div class="properties-info-row">
-          <span>Domain: <strong>[${xMin.toFixed(2)}, ${xMax.toFixed(2)}]</strong></span>
-          <span>Range: <strong>[${yMin.toFixed(2)}, ${yMax.toFixed(2)}]</strong></span>
+        <div style="font-size: 0.75rem; color: #64748b; margin: 0.5rem 0;">
+          ${shape.fitStatus === 'loading' ? 'Fitting equation via backend...' : 'Click "Fit Equation" to approximate this stroke with mathematical models (Linear, Quadratic, Cubic, Absolute Value, Sine).'}
         </div>
-        ${fitSectionHtml}
+        <div class="properties-actions">
+          <button type="button" id="prop-fit-btn" class="btn btn-primary" ${shape.fitStatus === 'loading' ? 'disabled' : ''}>
+            ${shape.fitStatus === 'loading' ? 'Fitting...' : 'Fit Equation'}
+          </button>
+        </div>
       </div>
     `;
-
     const fitBtn = document.getElementById('prop-fit-btn');
-    if (fitBtn) fitBtn.addEventListener('click', () => fitFreehandStroke(shape));
-
-    const refitBtn = document.getElementById('prop-refit-btn');
-    if (refitBtn) {
-      refitBtn.addEventListener('click', () => {
-        const sel = document.getElementById('prop-family-select');
-        const chosen = sel ? (sel.value || null) : null;
-        fitFreehandStroke(shape, chosen);
-      });
+    if (fitBtn) {
+      fitBtn.addEventListener('click', () => fitFreehandStroke(shape));
     }
-
-    const toggleOverlayBtn = document.getElementById('prop-toggle-overlay-btn');
-    if (toggleOverlayBtn) {
-      toggleOverlayBtn.addEventListener('click', () => {
-        shape.showOverlay = !(shape.showOverlay !== false);
-        renderShapePropertiesUI(shape);
-        updateEquationsUI();
-        render();
-      });
-    }
-
-    const candPills = propertiesBody.querySelectorAll('.fit-candidate-pill[data-cand-idx]');
-    candPills.forEach(pill => {
-      pill.addEventListener('click', () => {
-        const idx = parseInt(pill.dataset.candIdx, 10);
-        shape.selectedCandidateIndex = idx;
-        renderShapePropertiesUI(shape);
-        updateEquationsUI();
-        render();
-      });
-    });
-
     return;
   }
 
+  // 2. RECOGNISED GEOMETRIC SHAPES
   let fieldsHtml = '';
   let infoHtml = '';
 
@@ -1863,7 +2416,6 @@ function renderShapePropertiesUI(shape) {
     </form>
   `;
 
-  // Attach event listeners for Apply, Cancel, and Enter/Escape keys
   const applyBtn = document.getElementById('properties-apply-btn');
   const cancelBtn = document.getElementById('properties-cancel-btn');
 
@@ -2428,7 +2980,9 @@ function handlePointerUp(event) {
         fitStatus: null,
         fitData: null,
         selectedCandidateIndex: 0,
-        showOverlay: true
+        showOverlay: true,
+        showSketch: true,
+        showFit: true
       };
       shapes.push(freehandShape);
       selectedShapeId = freehandShape.id;
@@ -2437,6 +2991,18 @@ function handlePointerUp(event) {
     }
   } else if (toolMode === 'edit') {
     if (selectedShapeId) {
+      const selected = shapes.find(s => s.id === selectedShapeId);
+      if (selected && activeHandle === 'translate-freehand' && handleDragStart && handleDragStart.hasMoved) {
+        if (selected.fitStatus === 'success' || selected.fitData) {
+          selected.lastCommittedState = {
+            baseGeometry: { points: JSON.parse(JSON.stringify(handleDragStart.basePoints)) },
+            baseFitData: handleDragStart.baseFitData ? JSON.parse(JSON.stringify(handleDragStart.baseFitData)) : null,
+            baseFitStatus: handleDragStart.baseFitStatus
+          };
+          selected.fitStatus = 'invalidated';
+          selected.fitData = null;
+        }
+      }
       refreshPropertiesInputsIfSelected(selectedShapeId);
     }
   }
@@ -2469,8 +3035,15 @@ function handlePointerCancel() {
   // If cancelling during an edit drag, restore original geometry
   if (handleDragStart && selectedShapeId) {
     const selected = shapes.find(s => s.id === selectedShapeId);
-    if (selected && handleDragStart.baseGeometry) {
-      selected.geometry = JSON.parse(JSON.stringify(handleDragStart.baseGeometry));
+    if (selected) {
+      if (activeHandle === 'translate-freehand') {
+        if (handleDragStart.basePoints) selected.geometry.points = JSON.parse(JSON.stringify(handleDragStart.basePoints));
+        if (handleDragStart.baseRawPoints) selected.rawPoints = JSON.parse(JSON.stringify(handleDragStart.baseRawPoints));
+        selected.fitData = handleDragStart.baseFitData ? JSON.parse(JSON.stringify(handleDragStart.baseFitData)) : null;
+        selected.fitStatus = handleDragStart.baseFitStatus;
+      } else if (handleDragStart.baseGeometry) {
+        selected.geometry = JSON.parse(JSON.stringify(handleDragStart.baseGeometry));
+      }
       renderShapePropertiesUI(selected);
     }
   }
@@ -2504,25 +3077,79 @@ function handlePointerCancel() {
 function handleEditPointerDown(canvasX, canvasY, graphPoint) {
   const selected = shapes.find(s => s.id === selectedShapeId);
   if (selected) {
-    const handle = findHitHandle(selected, canvasX, canvasY);
-    if (handle) {
-      activeHandle = handle;
-      appState = 'transformingShape';
-      handleDragStart = {
-        canvasX,
-        canvasY,
-        graphPoint,
-        baseGeometry: JSON.parse(JSON.stringify(selected.geometry))
-      };
-      render();
-      return;
+    if (selected.type === 'freehand') {
+      const hitShape = findHitShape(canvasX, canvasY);
+      if (hitShape && hitShape.id === selected.id) {
+        activeHandle = 'translate-freehand';
+        appState = 'transformingShape';
+        handleDragStart = {
+          canvasX,
+          canvasY,
+          graphPoint,
+          basePoints: JSON.parse(JSON.stringify(selected.geometry.points)),
+          baseRawPoints: selected.rawPoints ? JSON.parse(JSON.stringify(selected.rawPoints)) : null,
+          baseFitData: selected.fitData ? JSON.parse(JSON.stringify(selected.fitData)) : null,
+          baseFitStatus: selected.fitStatus,
+          hasMoved: false
+        };
+        render();
+        return;
+      }
+    } else {
+      const handle = findHitHandle(selected, canvasX, canvasY);
+      if (handle) {
+        activeHandle = handle;
+        appState = 'transformingShape';
+        handleDragStart = {
+          canvasX,
+          canvasY,
+          graphPoint,
+          baseGeometry: JSON.parse(JSON.stringify(selected.geometry))
+        };
+        render();
+        return;
+      }
     }
   }
 
   const hitShape = findHitShape(canvasX, canvasY);
   if (hitShape) {
     selectedShapeId = hitShape.id;
-    appState = 'idle';
+    if (hitShape.type === 'freehand') {
+      activeHandle = 'translate-freehand';
+      appState = 'transformingShape';
+      handleDragStart = {
+        canvasX,
+        canvasY,
+        graphPoint,
+        basePoints: JSON.parse(JSON.stringify(hitShape.geometry.points)),
+        baseRawPoints: hitShape.rawPoints ? JSON.parse(JSON.stringify(hitShape.rawPoints)) : null,
+        baseFitData: hitShape.fitData ? JSON.parse(JSON.stringify(hitShape.fitData)) : null,
+        baseFitStatus: hitShape.fitStatus,
+        hasMoved: false
+      };
+    } else {
+      const handle = findHitHandle(hitShape, canvasX, canvasY);
+      if (handle) {
+        activeHandle = handle;
+        appState = 'transformingShape';
+        handleDragStart = {
+          canvasX,
+          canvasY,
+          graphPoint,
+          baseGeometry: JSON.parse(JSON.stringify(hitShape.geometry))
+        };
+      } else {
+        activeHandle = 'center';
+        appState = 'transformingShape';
+        handleDragStart = {
+          canvasX,
+          canvasY,
+          graphPoint,
+          baseGeometry: JSON.parse(JSON.stringify(hitShape.geometry))
+        };
+      }
+    }
     updateStatusUI('edit-selected');
     renderShapePropertiesUI(hitShape);
   } else {
@@ -2541,6 +3168,45 @@ function handleEditPointerMove(canvasX, canvasY) {
 
   const currentGraph = canvasToGraph(canvasX, canvasY, displayWidth, displayHeight);
 
+  if (activeHandle === 'translate-freehand') {
+    const dx = currentGraph.x - handleDragStart.graphPoint.x;
+    const dy = currentGraph.y - handleDragStart.graphPoint.y;
+    if (Math.hypot(canvasX - handleDragStart.canvasX, canvasY - handleDragStart.canvasY) > 3) {
+      handleDragStart.hasMoved = true;
+    }
+    if (handleDragStart.hasMoved) {
+      if (handleDragStart.basePoints) {
+        selected.geometry.points = handleDragStart.basePoints.map(p => ({
+          x: p.x + dx,
+          y: p.y + dy
+        }));
+      }
+      if (handleDragStart.baseRawPoints) {
+        selected.rawPoints = handleDragStart.baseRawPoints.map(p => ({
+          x: p.x + dx,
+          y: p.y + dy
+        }));
+      }
+      // Invalidate in-flight fit requests
+      currentFitRequestId++;
+
+      // Shift plot points live for visual feedback during dragging
+      if (selected.fitData && selected.fitData.candidates && handleDragStart.baseFitData) {
+        selected.fitData.candidates.forEach((cand, idx) => {
+          const baseCand = handleDragStart.baseFitData.candidates?.[idx];
+          if (baseCand && baseCand.plot_points) {
+            cand.plot_points = baseCand.plot_points.map(pt => ({
+              x: pt.x + dx,
+              y: pt.y + dy
+            }));
+          }
+        });
+      }
+    }
+    render();
+    return;
+  }
+
   if (activeHandle === 'center') {
     const dx = currentGraph.x - handleDragStart.graphPoint.x;
     const dy = currentGraph.y - handleDragStart.graphPoint.y;
@@ -2555,6 +3221,16 @@ function handleEditPointerMove(canvasX, canvasY) {
         x: v.x + dx,
         y: v.y + dy
       }));
+    }
+    if (selected.type === 'line' && selected.geometry.p1 && selected.geometry.p2) {
+      selected.geometry.p1 = {
+        x: handleDragStart.baseGeometry.p1.x + dx,
+        y: handleDragStart.baseGeometry.p1.y + dy
+      };
+      selected.geometry.p2 = {
+        x: handleDragStart.baseGeometry.p2.x + dx,
+        y: handleDragStart.baseGeometry.p2.y + dy
+      };
     }
   } else {
     const tempShape = {
@@ -2670,6 +3346,7 @@ function findHitShape(canvasX, canvasY) {
         return s;
       }
     } else if (s.type === 'freehand' && s.geometry.points) {
+      // Check distance to raw sketch stroke
       const pts = s.geometry.points;
       for (let j = 0; j < pts.length; j++) {
         const cp = graphToCanvas(pts[j].x, pts[j].y, displayWidth, displayHeight);
@@ -2680,6 +3357,26 @@ function findHitShape(canvasX, canvasY) {
           const prevCp = graphToCanvas(pts[j - 1].x, pts[j - 1].y, displayWidth, displayHeight);
           if (distToSegment({ x: canvasX, y: canvasY }, prevCp, cp) <= threshold) {
             return s;
+          }
+        }
+      }
+      // Check distance to fitted curve plot samples
+      if (s.showFit !== false && s.showOverlay !== false && s.fitData && s.fitData.candidates) {
+        const candidateIdx = (s.selectedCandidateIndex >= 0 && s.selectedCandidateIndex < s.fitData.candidates.length)
+          ? s.selectedCandidateIndex
+          : 0;
+        const cand = s.fitData.candidates[candidateIdx];
+        const samples = cand ? (cand.plot_points || cand.plotting_samples || []) : [];
+        for (let j = 0; j < samples.length; j++) {
+          const cp = graphToCanvas(samples[j].x, samples[j].y, displayWidth, displayHeight);
+          if (Math.hypot(canvasX - cp.x, canvasY - cp.y) <= threshold) {
+            return s;
+          }
+          if (j > 0) {
+            const prevCp = graphToCanvas(samples[j - 1].x, samples[j - 1].y, displayWidth, displayHeight);
+            if (distToSegment({ x: canvasX, y: canvasY }, prevCp, cp) <= threshold) {
+              return s;
+            }
           }
         }
       }

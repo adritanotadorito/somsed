@@ -112,22 +112,28 @@ body {
 }
 
 .brand-title {
-  font-family: var(--font-brand);
-  font-size: 1.45rem;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  color: #ffffff;
-  line-height: 1.05;
-  text-transform: lowercase;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  margin: 0;
+  padding: 0;
+}
+
+.somsed-wordmark-logo {
+  height: 22px;
+  width: auto;
+  display: block;
 }
 
 .brand-subtitle {
-  font-size: 0.72rem;
+  font-size: 0.70rem;
   font-weight: 400;
   color: var(--text-header-muted);
   letter-spacing: -0.01em;
   line-height: 1;
-  margin-top: 2px;
+  margin-top: 3px;
+  font-family: var(--font-sans);
 }
 
 /* Mode Switcher Pill in Dark Header */
@@ -530,7 +536,9 @@ body {
   border-radius: 4px;
   padding: 0.45rem 0.6rem;
   overflow-x: auto;
+  max-width: calc(100% - 26px);
   margin-left: 26px;
+  word-break: break-word;
 }
 
 .equation-formula {
@@ -539,6 +547,14 @@ body {
   display: flex;
   align-items: center;
   min-height: 24px;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.katex-display {
+  margin: 0.2em 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
 }
 
 .equation-details-sub {
@@ -552,56 +568,70 @@ body {
   flex-wrap: wrap;
 }
 
-.equation-transforms-box {
-  margin-top: 0.3rem;
-  padding-top: 0.3rem;
-  border-top: 1px dashed var(--border-subtle);
-  font-size: 0.78rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+.badge-approx {
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.1);
+  color: #065f46;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
-/* Multi-edge details */
-.equation-edges-details {
-  margin-top: 0.35rem;
-  font-size: 0.75rem;
+.badge-manual {
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: rgba(245, 158, 11, 0.1);
+  color: #b45309;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
 }
 
-.equation-edges-details summary {
+.badge-invalidated {
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+}
+
+.btn-toggle-sketch, .btn-toggle-fit, .btn-toggle-overlay {
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background: #ffffff;
+  color: #4b5563;
   cursor: pointer;
-  color: var(--accent-primary);
+  transition: all 0.12s;
+}
+
+.btn-toggle-sketch:hover, .btn-toggle-fit:hover, .btn-toggle-overlay:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.btn-toggle-sketch.active {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
   font-weight: 600;
-  padding: 0.15rem 0;
-  user-select: none;
 }
 
-.edges-table {
-  width: 100%;
-  margin-top: 0.3rem;
-  border-collapse: collapse;
-}
-
-.edges-table tr {
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.edges-table tr:last-child {
-  border-bottom: none;
-}
-
-.edges-table td {
-  padding: 0.25rem 0.2rem;
-  font-size: 0.78rem;
-}
-
-.edges-table .edge-num {
+.btn-toggle-fit.active, .btn-toggle-overlay.active {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
   font-weight: 600;
-  color: #6b7280;
-  width: 55px;
 }
 
-/* Freehand Fitting Elements */
 .fit-loading-box {
   display: flex;
   align-items: center;
@@ -723,25 +753,6 @@ body {
 
 .btn-fit:hover {
   background: var(--accent-hover);
-}
-
-.btn-toggle-overlay {
-  font-family: inherit;
-  font-size: 0.72rem;
-  font-weight: 500;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  border: 1px solid var(--border-subtle);
-  background: #ffffff;
-  color: #4b5563;
-  cursor: pointer;
-}
-
-.btn-toggle-overlay.active {
-  background: #ecfdf5;
-  border-color: #a7f3d0;
-  color: #065f46;
-  font-weight: 600;
 }
 
 .fit-family-select {

@@ -408,6 +408,301 @@ function derivePolygonBoundaryEquations(shape, decimals = 2) {
 }
 
 /**
+ * Formats independent variable domain restriction: {u_min <= u <= u_max}
+ */
+function formatFittedDomain(domain, indepVar = 'x', decimals = 2) {
+  if (!domain || domain.length < 2) {
+    return { latex: '', text: '' };
+  }
+  const uMinStr = formatNum(domain[0], decimals);
+  const uMaxStr = formatNum(domain[1], decimals);
+  return {
+    latex: `\\quad \\left\\{ ${uMinStr} \\le ${indepVar} \\le ${uMaxStr} \\right\\}`,
+    text: `  {${uMinStr} <= ${indepVar} <= ${uMaxStr}}`
+  };
+}
+
+/**
+ * Formats linear equation: y = mx + b or x = my + b
+ */
+function formatLinearFittedEquation(m, b, domain, orientation = 'y_of_x', decimals = 2) {
+  const depVar = orientation === 'y_of_x' ? 'y' : 'x';
+  const indepVar = orientation === 'y_of_x' ? 'x' : 'y';
+  const dom = formatFittedDomain(domain, indepVar, decimals);
+
+  let exprLatex = '';
+  let exprText = '';
+
+  if (Math.abs(m) < 1e-4) {
+    const bStr = formatNum(b, decimals);
+    exprLatex = bStr;
+    exprText = bStr;
+  } else {
+    let mStr = '';
+    if (Math.abs(m - 1.0) < 1e-4) {
+      mStr = indepVar;
+    } else if (Math.abs(m - (-1.0)) < 1e-4) {
+      mStr = `-${indepVar}`;
+    } else {
+      mStr = `${formatNum(m, decimals)}${indepVar}`;
+    }
+
+    const bVal = formatNum(Math.abs(b), decimals);
+    let bStr = '';
+    if (bVal !== '0') {
+      bStr = b > 0 ? ` + ${bVal}` : ` - ${bVal}`;
+    }
+
+    exprLatex = `${mStr}${bStr}`;
+    exprText = `${mStr}${bStr}`;
+  }
+
+  return {
+    latex: `${depVar} = ${exprLatex}${dom.latex}`,
+    text: `${depVar} = ${exprText}${dom.text}`,
+    latexWithoutDomain: `${depVar} = ${exprLatex}`,
+    textWithoutDomain: `${depVar} = ${exprText}`
+  };
+}
+
+/**
+ * Formats quadratic equation: y = ax² + bx + c
+ */
+function formatQuadraticFittedEquation(a, b, c, domain, orientation = 'y_of_x', decimals = 2) {
+  const depVar = orientation === 'y_of_x' ? 'y' : 'x';
+  const indepVar = orientation === 'y_of_x' ? 'x' : 'y';
+  const dom = formatFittedDomain(domain, indepVar, decimals);
+
+  const termsLatex = [];
+  const termsText = [];
+
+  const aVal = formatNum(a, decimals);
+  if (aVal !== '0') {
+    if (Math.abs(a - 1.0) < 1e-4) {
+      termsLatex.push(`${indepVar}^2`);
+      termsText.push(`${indepVar}²`);
+    } else if (Math.abs(a - (-1.0)) < 1e-4) {
+      termsLatex.push(`-${indepVar}^2`);
+      termsText.push(`-${indepVar}²`);
+    } else {
+      termsLatex.push(`${aVal}${indepVar}^2`);
+      termsText.push(`${aVal}${indepVar}²`);
+    }
+  }
+
+  const bVal = formatNum(Math.abs(b), decimals);
+  if (bVal !== '0') {
+    const prefix = (termsLatex.length > 0 && b > 0) ? ' + ' : ((termsLatex.length > 0 && b < 0) ? ' - ' : (b < 0 ? '-' : ''));
+    if (Math.abs(Math.abs(b) - 1.0) < 1e-4) {
+      termsLatex.push(`${prefix}${indepVar}`);
+      termsText.push(`${prefix}${indepVar}`);
+    } else {
+      termsLatex.push(`${prefix}${bVal}${indepVar}`);
+      termsText.push(`${prefix}${bVal}${indepVar}`);
+    }
+  }
+
+  const cVal = formatNum(Math.abs(c), decimals);
+  if (cVal !== '0' || termsLatex.length === 0) {
+    const prefix = (termsLatex.length > 0 && c > 0) ? ' + ' : ((termsLatex.length > 0 && c < 0) ? ' - ' : (c < 0 ? '-' : ''));
+    termsLatex.push(`${prefix}${cVal}`);
+    termsText.push(`${prefix}${cVal}`);
+  }
+
+  const exprLatex = termsLatex.join('') || '0';
+  const exprText = termsText.join('') || '0';
+
+  return {
+    latex: `${depVar} = ${exprLatex}${dom.latex}`,
+    text: `${depVar} = ${exprText}${dom.text}`,
+    latexWithoutDomain: `${depVar} = ${exprLatex}`,
+    textWithoutDomain: `${depVar} = ${exprText}`
+  };
+}
+
+/**
+ * Formats cubic equation: y = ax³ + bx² + cx + d
+ */
+function formatCubicFittedEquation(a, b, c, d, domain, orientation = 'y_of_x', decimals = 2) {
+  const depVar = orientation === 'y_of_x' ? 'y' : 'x';
+  const indepVar = orientation === 'y_of_x' ? 'x' : 'y';
+  const dom = formatFittedDomain(domain, indepVar, decimals);
+
+  const termsLatex = [];
+  const termsText = [];
+
+  const aVal = formatNum(a, decimals);
+  if (aVal !== '0') {
+    if (Math.abs(a - 1.0) < 1e-4) {
+      termsLatex.push(`${indepVar}^3`);
+      termsText.push(`${indepVar}³`);
+    } else if (Math.abs(a - (-1.0)) < 1e-4) {
+      termsLatex.push(`-${indepVar}^3`);
+      termsText.push(`-${indepVar}³`);
+    } else {
+      termsLatex.push(`${aVal}${indepVar}^3`);
+      termsText.push(`${aVal}${indepVar}³`);
+    }
+  }
+
+  const bVal = formatNum(Math.abs(b), decimals);
+  if (bVal !== '0') {
+    const prefix = (termsLatex.length > 0 && b > 0) ? ' + ' : ((termsLatex.length > 0 && b < 0) ? ' - ' : (b < 0 ? '-' : ''));
+    if (Math.abs(Math.abs(b) - 1.0) < 1e-4) {
+      termsLatex.push(`${prefix}${indepVar}^2`);
+      termsText.push(`${prefix}${indepVar}²`);
+    } else {
+      termsLatex.push(`${prefix}${bVal}${indepVar}^2`);
+      termsText.push(`${prefix}${bVal}${indepVar}²`);
+    }
+  }
+
+  const cVal = formatNum(Math.abs(c), decimals);
+  if (cVal !== '0') {
+    const prefix = (termsLatex.length > 0 && c > 0) ? ' + ' : ((termsLatex.length > 0 && c < 0) ? ' - ' : (c < 0 ? '-' : ''));
+    if (Math.abs(Math.abs(c) - 1.0) < 1e-4) {
+      termsLatex.push(`${prefix}${indepVar}`);
+      termsText.push(`${prefix}${indepVar}`);
+    } else {
+      termsLatex.push(`${prefix}${cVal}${indepVar}`);
+      termsText.push(`${prefix}${cVal}${indepVar}`);
+    }
+  }
+
+  const dVal = formatNum(Math.abs(d), decimals);
+  if (dVal !== '0' || termsLatex.length === 0) {
+    const prefix = (termsLatex.length > 0 && d > 0) ? ' + ' : ((termsLatex.length > 0 && d < 0) ? ' - ' : (d < 0 ? '-' : ''));
+    termsLatex.push(`${prefix}${dVal}`);
+    termsText.push(`${prefix}${dVal}`);
+  }
+
+  const exprLatex = termsLatex.join('') || '0';
+  const exprText = termsText.join('') || '0';
+
+  return {
+    latex: `${depVar} = ${exprLatex}${dom.latex}`,
+    text: `${depVar} = ${exprText}${dom.text}`,
+    latexWithoutDomain: `${depVar} = ${exprLatex}`,
+    textWithoutDomain: `${depVar} = ${exprText}`
+  };
+}
+
+/**
+ * Formats absolute value equation: y = a|x - h| + k
+ */
+function formatAbsFittedEquation(a, h, k, domain, orientation = 'y_of_x', decimals = 2) {
+  const depVar = orientation === 'y_of_x' ? 'y' : 'x';
+  const indepVar = orientation === 'y_of_x' ? 'x' : 'y';
+  const dom = formatFittedDomain(domain, indepVar, decimals);
+
+  let aStr = '';
+  if (Math.abs(a - 1.0) < 1e-4) {
+    aStr = '';
+  } else if (Math.abs(a - (-1.0)) < 1e-4) {
+    aStr = '-';
+  } else {
+    aStr = formatNum(a, decimals);
+  }
+
+  const hVal = formatNum(Math.abs(h), decimals);
+  let inner = indepVar;
+  if (hVal !== '0') {
+    inner = h > 0 ? `${indepVar} - ${hVal}` : `${indepVar} + ${hVal}`;
+  }
+
+  const kVal = formatNum(Math.abs(k), decimals);
+  let kStr = '';
+  if (kVal !== '0') {
+    kStr = k > 0 ? ` + ${kVal}` : ` - ${kVal}`;
+  }
+
+  const latex = `${depVar} = ${aStr}\\left|${inner}\\right|${kStr}${dom.latex}`;
+  const text = `${depVar} = ${aStr}|${inner}|${kStr}${dom.text}`;
+
+  return {
+    latex,
+    text,
+    latexWithoutDomain: `${depVar} = ${aStr}\\left|${inner}\\right|${kStr}`,
+    textWithoutDomain: `${depVar} = ${aStr}|${inner}|${kStr}`
+  };
+}
+
+/**
+ * Formats sine wave equation: y = A sin(Bx + C) + D
+ */
+function formatSineFittedEquation(A, B, C, D, domain, orientation = 'y_of_x', decimals = 2) {
+  const depVar = orientation === 'y_of_x' ? 'y' : 'x';
+  const indepVar = orientation === 'y_of_x' ? 'x' : 'y';
+  const dom = formatFittedDomain(domain, indepVar, decimals);
+
+  let amp = A;
+  let phase = C;
+  if (amp < 0) {
+    amp = -amp;
+    phase = phase + Math.PI;
+  }
+
+  phase = (phase + Math.PI) % (2.0 * Math.PI) - Math.PI;
+  if (Math.abs(phase + Math.PI) < 1e-4) {
+    phase = Math.PI;
+  }
+
+  let aStr = '';
+  if (Math.abs(amp - 1.0) >= 1e-4) {
+    aStr = formatNum(amp, decimals);
+  }
+
+  let bStr = indepVar;
+  if (Math.abs(B - 1.0) >= 1e-4) {
+    bStr = `${formatNum(B, decimals)}${indepVar}`;
+  }
+
+  const cVal = formatNum(Math.abs(phase), decimals);
+  let inner = bStr;
+  if (cVal !== '0') {
+    inner = phase > 0 ? `${bStr} + ${cVal}` : `${bStr} - ${cVal}`;
+  }
+
+  const dVal = formatNum(Math.abs(D), decimals);
+  let dStr = '';
+  if (dVal !== '0') {
+    dStr = D > 0 ? ` + ${dVal}` : ` - ${dVal}`;
+  }
+
+  const aText = aStr ? `${aStr} ` : '';
+  const latex = `${depVar} = ${aStr}\\sin\\left(${inner}\\right)${dStr}${dom.latex}`;
+  const text = `${depVar} = ${aText}sin(${inner})${dStr}${dom.text}`;
+
+  return {
+    latex,
+    text,
+    latexWithoutDomain: `${depVar} = ${aStr}\\sin\\left(${inner}\\right)${dStr}`,
+    textWithoutDomain: `${depVar} = ${aText}sin(${inner})${dStr}`
+  };
+}
+
+/**
+ * General fitted equation dispatcher
+ */
+function formatFittedEquation(family, params, domain, orientation = 'y_of_x', decimals = 2) {
+  const fam = (family || 'linear').toLowerCase().replace(/\s+/g, '_');
+  switch (fam) {
+    case 'linear':
+      return formatLinearFittedEquation(params.m ?? 1, params.b ?? 0, domain, orientation, decimals);
+    case 'quadratic':
+      return formatQuadraticFittedEquation(params.a ?? 1, params.b ?? 0, params.c ?? 0, domain, orientation, decimals);
+    case 'cubic':
+      return formatCubicFittedEquation(params.a ?? 1, params.b ?? 0, params.c ?? 0, params.d ?? 0, domain, orientation, decimals);
+    case 'absolute_value':
+      return formatAbsFittedEquation(params.a ?? 1, params.h ?? 0, params.k ?? 0, domain, orientation, decimals);
+    case 'sine':
+      return formatSineFittedEquation(params.A ?? 1, params.B ?? 1, params.C ?? 0, params.D ?? 0, domain, orientation, decimals);
+    default:
+      return formatLinearFittedEquation(params.m ?? 1, params.b ?? 0, domain, orientation, decimals);
+  }
+}
+
+/**
  * MASTER EQUATION DERIVATION FUNCTION
  * Derives the complete mathematical description for any recognized shape.
  */
@@ -494,12 +789,15 @@ function deriveShapeEquations(shape, decimals = 2) {
         const cand = shape.fitData.candidates[candidateIndex];
         const isSideways = (cand.orientation === 'x_of_y');
         const orientLabel = isSideways ? 'x = g(y)' : 'y = f(x)';
+        const isManual = !!cand.is_manually_adjusted;
         return {
           shapeId: shape.id,
           shapeType: 'freehand',
           title: customTitle || `Fitted Curve ${shape.id || ''}`,
           isFreehand: true,
           isFitted: true,
+          isApprox: true,
+          isManuallyAdjusted: isManual,
           candidateIndex,
           candidate: cand,
           candidates: shape.fitData.candidates,
@@ -519,7 +817,7 @@ function deriveShapeEquations(shape, decimals = 2) {
           parameters: cand.params || cand.parameters || {},
           plottingSamples: cand.plot_points || cand.plotting_samples || [],
           familyName: cand.family_name,
-          detailsLatex: `\\text{Family: } ${cand.family_name} \\; (${orientLabel}) \\quad | \\quad \\text{Error: } ${(cand.geom_error ?? cand.rmse).toFixed(3)}`
+          detailsLatex: `\\text{Family: } ${cand.family_name} \\; (${orientLabel}) \\quad | \\quad \\text{Error: } ${(cand.geom_error ?? cand.rmse).toFixed(3)}${isManual ? ' \\; [\\text{Adjusted}]' : ''}`
         };
       }
       return {
@@ -549,6 +847,15 @@ if (typeof module !== 'undefined' && module.exports) {
     deriveEllipseEquation,
     getShapeOrderedVertices,
     derivePolygonBoundaryEquations,
-    deriveShapeEquations
+    deriveShapeEquations,
+    formatFittedDomain,
+    formatLinearFittedEquation,
+    formatQuadraticFittedEquation,
+    formatCubicFittedEquation,
+    formatAbsFittedEquation,
+    formatSineFittedEquation,
+    formatFittedEquation
   };
 }
+
+
