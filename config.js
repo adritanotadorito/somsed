@@ -25,7 +25,7 @@ window.SOMSED_CONFIG = {
   POSTHOG_HOST: window.__SOMSED_POSTHOG_HOST__ || 'https://us.i.posthog.com',
 
   // FastAPI Curve Fitting Backend URL
-  BACKEND_URL: window.__SOMSED_BACKEND_URL__ || 'http://127.0.0.1:8001/fit',
+  BACKEND_URL: window.__SOMSED_BACKEND_URL__ || 'https://somsed-backend.onrender.com/fit',
 
   // Development analytics toggle:
   // - When false (default): Analytics is automatically disabled on localhost/127.0.0.1
