@@ -2,20 +2,9 @@ import numpy as np
 from typing import Tuple, List, Optional
 
 def preprocess_stroke(raw_points: list) -> Tuple[bool, Optional[np.ndarray], List[str], bool, Optional[str]]:
-    """
-    Preprocesses a raw freehand stroke for mathematical curve fitting:
-    1. Validates coordinate finiteness and sufficient distinct points.
-    2. Resamples stroke uniformly by Euclidean arc length.
-    3. Detects closed loops (circles, ovals, loop-de-loops) and multi-branch squiggles.
-    4. Evaluates single-valuedness in both orientations:
-       - y = f(x) ('y_of_x')
-       - x = g(y) ('x_of_y')
-    5. Returns (ok, resampled_pts, valid_orientations, is_parametric_needed, err_msg).
-    """
     if not raw_points or len(raw_points) < 4:
         return False, None, [], False, "Stroke has too few points for curve fitting (minimum 4 points required)."
 
-    # Extract coordinates
     try:
         pts = np.array([[p['x'] if isinstance(p, dict) else p.x, 
                          p['y'] if isinstance(p, dict) else p.y] for p in raw_points], dtype=np.float64)
@@ -25,14 +14,12 @@ def preprocess_stroke(raw_points: list) -> Tuple[bool, Optional[np.ndarray], Lis
     if not np.all(np.isfinite(pts)):
         return False, None, [], False, "Stroke contains invalid or non-finite coordinates."
 
-    # 1. Deduplicate consecutive identical points
     diffs = np.linalg.norm(np.diff(pts, axis=0), axis=1)
     keep_mask = np.concatenate(([True], diffs > 1e-5))
     pts = pts[keep_mask]
     if len(pts) < 4:
         return False, None, [], False, "Stroke lacks sufficient distinct points."
 
-    # 2. Resample by arc length
     diffs = np.linalg.norm(np.diff(pts, axis=0), axis=1)
     cum_dist = np.concatenate(([0.0], np.cumsum(diffs)))
     total_len = float(cum_dist[-1])
@@ -40,7 +27,6 @@ def preprocess_stroke(raw_points: list) -> Tuple[bool, Optional[np.ndarray], Lis
     if total_len < 0.2:
         return False, None, [], False, "Stroke is too small in graph coordinate space."
 
-    # Check for closed loops (start and end points very close compared to path length)
     end_to_end_dist = float(np.hypot(pts[-1, 0] - pts[0, 0], pts[-1, 1] - pts[0, 1]))
     if end_to_end_dist < 0.18 * total_len and total_len > 1.2:
         return False, None, [], True, "This curve needs parametric fitting, which is not supported yet."
@@ -57,13 +43,11 @@ def preprocess_stroke(raw_points: list) -> Tuple[bool, Optional[np.ndarray], Lis
     y_min, y_max = float(np.min(resampled_y)), float(np.max(resampled_y))
     span_y = y_max - y_min
 
-    # 3. Test y = f(x) single-valued validity
     valid_y_of_x = False
     if span_x >= 0.35:
         total_x_travel = float(np.sum(np.abs(np.diff(resampled_x))))
         ratio_x = total_x_travel / span_x
         if ratio_x <= 1.85:
-            # Multi-valued vertical overlap check across x-bins
             num_bins = 16
             bin_edges = np.linspace(x_min, x_max, num_bins + 1)
             has_overlap_x = False
@@ -79,13 +63,11 @@ def preprocess_stroke(raw_points: list) -> Tuple[bool, Optional[np.ndarray], Lis
             if not has_overlap_x:
                 valid_y_of_x = True
 
-    # 4. Test x = g(y) single-valued validity (sideways / vertical orientation)
     valid_x_of_y = False
     if span_y >= 0.35:
         total_y_travel = float(np.sum(np.abs(np.diff(resampled_y))))
         ratio_y = total_y_travel / span_y
         if ratio_y <= 1.85:
-            # Multi-valued horizontal overlap check across y-bins
             num_bins = 16
             bin_edges = np.linspace(y_min, y_max, num_bins + 1)
             has_overlap_y = False
@@ -108,7 +90,6 @@ def preprocess_stroke(raw_points: list) -> Tuple[bool, Optional[np.ndarray], Lis
         valid_orientations.append("x_of_y")
 
     if not valid_orientations:
-        # Neither orientation is single-valued (e.g. circle, loop, spiral, complex curve)
         return False, None, [], True, "This curve needs parametric fitting, which is not supported yet."
 
     return True, resampled_pts, valid_orientations, False, None

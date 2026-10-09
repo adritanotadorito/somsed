@@ -1,16 +1,3 @@
-/**
- * Somsed - Privacy-First Anonymous Usage Analytics (PostHog Integration)
- * 
- * Design & Privacy Guarantees:
- * - Strictly anonymous: No user sign-in required.
- * - Session recording is DISABLED (no screen captures, no DOM recordings).
- * - Autocapture is DISABLED (no arbitrary button/keystroke capturing).
- * - Only 6 explicit mathematical interaction events are tracked.
- * - No raw coordinates, equations, images, or user inputs are ever transmitted.
- * - Localhost / development traffic is excluded by default.
- * - Failures are completely silent and never interrupt drawing, fitting, or calculations.
- */
-
 (function () {
   'use strict';
 
@@ -29,7 +16,6 @@
 
   const shouldSendAnalytics = Boolean(config.POSTHOG_KEY) && (!isLocalEnvironment || Boolean(config.DEV_ANALYTICS));
 
-  // Initialize PostHog snippet safely if key is provided and enabled
   if (shouldSendAnalytics) {
     try {
       (function (t, e) {
@@ -74,15 +60,14 @@
 
       window.posthog.init(config.POSTHOG_KEY, {
         api_host: config.POSTHOG_HOST,
-        autocapture: false,               // Disable automatic DOM click/input capturing
-        disable_session_recording: true,  // Strictly disable session recording
-        capture_pageview: true,           // Capture anonymous pageview for visitor metrics
-        capture_pageleave: true,          // Capture session duration
+        autocapture: false,
+        disable_session_recording: true,
+        capture_pageview: true,
+        capture_pageleave: true,
         persistence: 'localStorage+cookie',
-        respect_dnt: true,                // Respect browser Do Not Track setting
+        respect_dnt: true,
         cross_subdomain_cookie: false,
         sanitize_properties: function (properties) {
-          // Extra safety layer: remove any accidental coordinate arrays or raw objects
           if (!properties) return properties;
           const clean = {};
           for (const [k, v] of Object.entries(properties)) {
@@ -98,15 +83,12 @@
     }
   }
 
-  /**
-   * Sanitizes event properties to guarantee that only safe primitive metadata is sent.
-   */
   function sanitizeProperties(props) {
     if (!props || typeof props !== 'object') return {};
     const sanitized = {};
     for (const [key, value] of Object.entries(props)) {
       if (typeof value === 'string') {
-        sanitized[key] = value.substring(0, 100); // Limit string length
+        sanitized[key] = value.substring(0, 100);
       } else if (typeof value === 'number' && Number.isFinite(value)) {
         sanitized[key] = value;
       } else if (typeof value === 'boolean') {
@@ -116,16 +98,11 @@
     return sanitized;
   }
 
-  /**
-   * Safe universal tracking function.
-   * Never throws exceptions; logs to console during local development.
-   */
   function trackEvent(eventName, properties = {}) {
     try {
       const cleanProps = sanitizeProperties(properties);
 
       if (isLocalEnvironment && !config.DEV_ANALYTICS) {
-        // Development mode: Log event locally without sending network requests
         console.debug(`[Analytics Debug] ${eventName}:`, cleanProps);
         return;
       }
@@ -134,26 +111,21 @@
         window.posthog.capture(eventName, cleanProps);
       }
     } catch (err) {
-      // Analytics failures must never affect calculator functionality
       console.debug('[Analytics] Failed to capture event:', err.message);
     }
   }
 
-  // Export analytics helper interface to window
   window.SomsedAnalytics = {
     trackEvent: trackEvent,
 
-    // 1. Drawing finished
     trackDrawingCompleted: function (strokeType = 'freehand') {
       trackEvent('drawing_completed', { stroke_type: String(strokeType) });
     },
 
-    // 2. Geometric shape recognized on hold
     trackShapeRecognized: function (shapeType) {
       trackEvent('shape_recognized', { shape_type: String(shapeType || 'unknown') });
     },
 
-    // 3. Curve fit succeeded
     trackFitSucceeded: function (modelFamily, orientation = 'y_of_x') {
       trackEvent('fit_succeeded', {
         model_family: String(modelFamily || 'unknown'),
@@ -161,21 +133,18 @@
       });
     },
 
-    // 4. Curve fit failed / rejected
     trackFitFailed: function (errorCategory) {
       trackEvent('fit_failed', {
         error_category: String(errorCategory || 'unknown_error')
       });
     },
 
-    // 5. Numerical parameters or geometry edited
     trackEditApplied: function (objectType) {
       trackEvent('edit_applied', {
         object_type: String(objectType || 'unknown')
       });
     },
 
-    // 6. LaTeX or Text equation copied
     trackEquationCopied: function (format = 'latex', shapeType = 'unknown') {
       trackEvent('equation_copied', {
         format: String(format || 'latex'),

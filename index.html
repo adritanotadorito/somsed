@@ -17,7 +17,6 @@
 
 <body>
   <div class="app-container">
-    <!-- Top Dark Charcoal Header -->
     <header class="app-header">
       <div class="header-left">
         <div class="mode-toggle-group" role="radiogroup" aria-label="Tool mode">
@@ -48,7 +47,6 @@
         </div>
       </div>
 
-      <!-- Center Branding (Centered across entire viewport) -->
       <div class="brand-center">
         <h1 class="brand-title" aria-label="Somsed">
           <img src="somsed-logo.svg" alt="Somsed" class="somsed-wordmark-logo" />
@@ -94,9 +92,7 @@
       </div>
     </header>
 
-    <!-- Main Workspace Split (Sidebar + Resizer + Graph) -->
     <main class="workspace">
-      <!-- Left Sidebar (Flat Expressions & Properties) -->
       <aside class="sidebar" id="sidebar" aria-label="Expressions and Properties Sidebar">
         <div class="sidebar-header">
           <div class="sidebar-title">
@@ -112,7 +108,6 @@
         </div>
 
         <div class="sidebar-content">
-          <!-- Numerical Shape Properties Panel (Hidden until a shape is selected) -->
           <section class="properties-card hidden" id="properties-card" aria-label="Shape Properties">
             <div class="properties-header">
               <div class="properties-title">
@@ -126,18 +121,15 @@
               <span id="properties-shape-badge" class="properties-shape-badge">Selected</span>
             </div>
             <div id="properties-body" class="properties-body">
-              <!-- Populated dynamically when a shape is selected -->
             </div>
           </section>
 
-          <!-- Mathematical Expressions List -->
           <section class="equations-card" id="equations-card" aria-label="Mathematical Equations">
             <div id="equations-list" class="equations-list">
               <div class="empty-state-simple">Draw on the graph to begin.</div>
             </div>
           </section>
 
-          <!-- Development Diagnostics Telemetry (Hidden by default) -->
           <div id="debug-panel" class="debug-panel hidden">
             <div class="debug-header">
               <div class="debug-title">
@@ -167,10 +159,8 @@
         </div>
       </aside>
 
-      <!-- Sidebar Resizer Splitter Handle -->
       <div class="sidebar-resizer" id="sidebar-resizer" title="Drag to resize sidebar"></div>
 
-      <!-- Floating Expand Button when Sidebar is Collapsed -->
       <button id="sidebar-expand-btn" class="sidebar-expand-btn hidden" title="Expand sidebar">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round">
@@ -179,14 +169,12 @@
         <span>Expressions</span>
       </button>
 
-      <!-- Right Graph Area & Canvas -->
       <section class="graph-area">
         <div class="canvas-container">
           <canvas id="graph-canvas"
             aria-label="Interactive coordinate grid for drawing and recognizing geometric graphs"></canvas>
         </div>
 
-        <!-- Floating Desmos-Style Square Zoom Controls (+ / - / Home) -->
         <div class="graph-controls-overlay">
           <button id="zoom-in-btn" class="graph-ctrl-btn" title="Zoom In (+)" aria-label="Zoom In">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -210,7 +198,6 @@
           </button>
         </div>
 
-        <!-- Status Hint Banner -->
         <div class="status-banner" id="status-banner" aria-live="polite">
           <span class="status-dot"></span>
           <span id="status-text">Draw a shape and hold to snap. Drag to adjust size and angle.</span>

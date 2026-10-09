@@ -1,52 +1,16 @@
-/**
- * Reverse Desmos - Geometric Shape Recognition Engine
- * 
- * Supports:
- * - Line segments ('line')
- * - Circles ('circle')
- * - Ellipses ('ellipse', including rotated ellipses)
- * - Rectangles ('rectangle') and Squares ('square', with side-based orientation & axis-alignment)
- * - Triangles ('triangle')
- * - Regular Polygons ('polygon', 5-8 sides: Pentagon, Hexagon, Heptagon, Octagon)
- * - Five-Point Stars ('star', 10 alternating vertices with 5-fold symmetry)
- * 
- * Fixes:
- * - Seam trimming & overlap removal for closed loops
- * - Side-based orientation estimation (replaces naive PCA for rectangles)
- * - Correct horizontal (u) vs vertical (v) dimension assignment regardless of start point/direction
- * - Rigorous structural validation for pentagons/polygons to prevent rectangle misclassification
- * - Common normalized boundary distance error metric with modest complexity penalties
- * - Comprehensive debug telemetry for inspection & debugging
- */
-
 const SHAPE_CONFIG = {
-  // Resampling distance along stroke path (CSS pixels)
   resampleStepPx: 4,
-
-  // Minimum overall stroke span/diameter (CSS pixels)
   minStrokeSpanPx: 25,
-
-  // Maximum allowed gap between start and end point relative to perimeter for closed shapes
   maxClosureGapRatio: 0.32,
-
-  // Maximum normalized error thresholds for shape acceptance
   maxLineRmsError: 0.08,
   maxCircleRadialError: 0.14,
   maxEllipseError: 0.15,
   maxPolygonEdgeError: 0.16,
   maxStarError: 0.18,
-
-  // Axis-aligned rectangle snapping threshold (radians: ~2.5 degrees)
   axisAlignedSnapAngleRad: 0.044,
-  axisAlignedErrorTolerance: 0.012, // Accept axis-aligned fit if error is within 0.012 of rotated fit
-
-  // Square vs Rectangle threshold: if aspect ratio difference < 15%, classify as Square
+  axisAlignedErrorTolerance: 0.012,
   squareAspectRatioThreshold: 0.15,
-
-  // Circle vs Ellipse threshold: if radius ratio difference < 15%, classify as Circle
   circleRadiusRatioThreshold: 0.15,
-
-  // Model complexity penalties
   complexityPenalties: {
     line: 0.000,
     circle: 0.000,
@@ -54,18 +18,15 @@ const SHAPE_CONFIG = {
     rectangle: 0.008,
     triangle: 0.008,
     ellipse: 0.015,
-    polygon5: 0.016, // Pentagon penalty prevents overfitting rectangle corner wobble
+    polygon5: 0.016,
     polygon6: 0.018,
     polygon7: 0.020,
     polygon8: 0.020,
     star: 0.030
   },
-
-  // Ambiguity margin
   ambiguityMargin: 0.025
 };
 
-// Global debug telemetry object accessible by UI
 let lastRecognitionDebug = {
   timestamp: 0,
   strokeMetrics: null,
@@ -77,14 +38,9 @@ let lastRecognitionDebug = {
   rawStrokeExport: null
 };
 
-/**
- * Trims small closing seam overlaps where the drawn stroke looped slightly past the start point,
- * and deduplicates stationary points at the endpoint.
- */
 function trimClosedSeamOverlap(points) {
   if (!points || points.length < 4) return points;
 
-  // 1. Deduplicate consecutive stationary points (e.g. from holding still before release)
   const deduped = [points[0]];
   for (let i = 1; i < points.length; i++) {
     const prev = deduped[deduped.length - 1];
@@ -96,7 +52,6 @@ function trimClosedSeamOverlap(points) {
 
   if (deduped.length < 10) return deduped;
 
-  // 2. Trim closing seam overlap
   const first = deduped[0];
   const n = deduped.length;
   const searchStart = Math.floor(n * 0.70);
@@ -109,9 +64,6 @@ function trimClosedSeamOverlap(points) {
   return deduped;
 }
 
-/**
- * Resamples stroke points so adjacent points have approximately equal arc-length spacing.
- */
 function resampleStroke(points, step = SHAPE_CONFIG.resampleStepPx) {
   if (!points || points.length < 2) return points ? [...points] : [];
 
@@ -148,9 +100,6 @@ function resampleStroke(points, step = SHAPE_CONFIG.resampleStepPx) {
   return resampled;
 }
 
-/**
- * Computes bounding box, path length, span, and centroid of a point set.
- */
 function computeStrokeMetrics(points) {
   let minX = Infinity, maxX = -Infinity;
   let minY = Infinity, maxY = -Infinity;
@@ -192,10 +141,6 @@ function computeStrokeMetrics(points) {
   };
 }
 
-/**
- * Detects sharp corner peaks along a contour using windowed angular curvature,
- * followed by corner cleanup.
- */
 function findCornerPeaks(points, k = 4, angleThreshold = 0.38) {
   const n = points.length;
   if (n < k * 2) return { rawCorners: [], cleanedCorners: [] };
@@ -248,9 +193,6 @@ function findCornerPeaks(points, k = 4, angleThreshold = 0.38) {
   return { rawCorners, cleanedCorners };
 }
 
-/**
- * Cleans extracted corners by merging micro-kinks and collinear vertices.
- */
 function cleanPolygonCorners(corners) {
   if (corners.length <= 3) return corners.slice();
 
@@ -271,7 +213,6 @@ function cleanPolygonCorners(corners) {
     }
     const avgEdgeLen = totalPerimeter / n;
 
-    // 1. Remove tiny micro-edges (< 16% of average edge length)
     for (let i = 0; i < n; i++) {
       if (edgeLengths[i] < avgEdgeLen * 0.16) {
         const next = pts[(i + 1) % n];
@@ -284,7 +225,6 @@ function cleanPolygonCorners(corners) {
     }
     if (changed) continue;
 
-    // 2. Remove nearly collinear vertices (turn angle < 22 degrees)
     for (let i = 0; i < n; i++) {
       const prev = pts[(i - 1 + n) % n];
       const curr = pts[i];
@@ -309,15 +249,11 @@ function cleanPolygonCorners(corners) {
   return pts;
 }
 
-/**
- * Checks if points cover at least 7 of 8 angular sectors around a center point (>= 300 degrees),
- * verifying full closed boundary coverage.
- */
 function checkAngularSectorCoverage(points, centerX, centerY, minSectors = 7) {
   const sectors = new Uint8Array(8);
   for (let i = 0; i < points.length; i++) {
-    const angle = Math.atan2(points[i].y - centerY, points[i].x - centerX); // -PI to PI
-    const normAngle = (angle + Math.PI) / (Math.PI * 2); // 0 to 1
+    const angle = Math.atan2(points[i].y - centerY, points[i].x - centerX);
+    const normAngle = (angle + Math.PI) / (Math.PI * 2);
     const sector = Math.min(7, Math.floor(normAngle * 8));
     sectors[sector] = 1;
   }
@@ -328,9 +264,6 @@ function checkAngularSectorCoverage(points, centerX, centerY, minSectors = 7) {
   return count >= minSectors;
 }
 
-/**
- * 1. LINE CANDIDATE (Total Least Squares)
- */
 function fitLineCandidate(points, metrics) {
   const n = points.length;
   if (n < 2) return null;
@@ -391,10 +324,6 @@ function fitLineCandidate(points, metrics) {
   };
 }
 
-/**
- * 2. CIRCLE CANDIDATE
- * Evaluated independently of polygon corner counts, with angular coverage verification.
- */
 function fitCircleCandidate(points, metrics, cornerCount = 0) {
   if (!metrics.isClosed || metrics.diagonal < SHAPE_CONFIG.minStrokeSpanPx) return null;
   if (!checkAngularSectorCoverage(points, metrics.centerX, metrics.centerY)) return null;
@@ -422,7 +351,6 @@ function fitCircleCandidate(points, metrics, cornerCount = 0) {
 
   if (rawError > SHAPE_CONFIG.maxCircleRadialError) return null;
 
-  // Add a corner penalty if 5+ prominent corners were detected on straight sides
   const cornerPenalty = (cornerCount >= 5) ? 0.025 : 0;
 
   return {
@@ -439,10 +367,6 @@ function fitCircleCandidate(points, metrics, cornerCount = 0) {
   };
 }
 
-/**
- * 3. ELLIPSE CANDIDATE
- * Evaluated independently of polygon corner counts, using 2x2 linear least squares on resampled points.
- */
 function fitEllipseCandidate(points, metrics, cornerCount = 0) {
   if (!metrics.isClosed || metrics.diagonal < SHAPE_CONFIG.minStrokeSpanPx) return null;
   if (!checkAngularSectorCoverage(points, metrics.centerX, metrics.centerY)) return null;
@@ -477,7 +401,6 @@ function fitEllipseCandidate(points, metrics, cornerCount = 0) {
     sV2 += v2;
   }
 
-  // Solve 2x2 linear least squares for A = 1/a^2, B = 1/b^2
   const det = sU4 * sV4 - sU2V2 * sU2V2;
   let radiusX = Math.sqrt(2 * sU2 / n);
   let radiusY = Math.sqrt(2 * sV2 / n);
@@ -511,7 +434,6 @@ function fitEllipseCandidate(points, metrics, cornerCount = 0) {
   const minR = Math.min(radiusX, radiusY);
   const cornerPenalty = (cornerCount >= 5) ? 0.025 : 0;
 
-  // If aspect ratio is close to 1:1, classify as Circle to ensure stable orientation
   if ((maxR - minR) / maxR < SHAPE_CONFIG.circleRadiusRatioThreshold) {
     const avgR = (radiusX + radiusY) / 2;
     return {
@@ -544,10 +466,6 @@ function fitEllipseCandidate(points, metrics, cornerCount = 0) {
   };
 }
 
-/**
- * 4. TRIANGLE CANDIDATE
- * Stores center centroid (p1+p2+p3)/3 for scaling and rotation around fixed center.
- */
 function fitTriangleCandidate(points, metrics, corners) {
   if (!metrics.isClosed || metrics.diagonal < SHAPE_CONFIG.minStrokeSpanPx) return null;
   if (corners.length !== 3) return null;
@@ -599,9 +517,6 @@ function fitTriangleCandidate(points, metrics, corners) {
   };
 }
 
-/**
- * 5. RECTANGLE & SQUARE CANDIDATE (Circular Mean Modulo 90° & Robust Orientation)
- */
 function fitRectangleCandidate(points, metrics, corners) {
   if (!metrics.isClosed || metrics.diagonal < SHAPE_CONFIG.minStrokeSpanPx) return null;
 
@@ -609,7 +524,6 @@ function fitRectangleCandidate(points, metrics, corners) {
   if (corners.length === 4) {
     quadCorners = corners;
   } else if (corners.length === 5) {
-    // If 5 corners exist due to a tiny wobble, evaluate 4-corner subsets
     let bestQuad = null;
     let minErr = Infinity;
     for (let skip = 0; skip < 5; skip++) {
@@ -634,7 +548,6 @@ function fitRectangleCandidate(points, metrics, corners) {
 function evaluateRectangleQuad(corners, points, metrics) {
   const [c0, c1, c2, c3] = corners;
 
-  // 1. Edge vectors & lengths
   const e0 = { x: c1.x - c0.x, y: c1.y - c0.y, len: Math.hypot(c1.x - c0.x, c1.y - c0.y) };
   const e1 = { x: c2.x - c1.x, y: c2.y - c1.y, len: Math.hypot(c2.x - c1.x, c2.y - c1.y) };
   const e2 = { x: c3.x - c2.x, y: c3.y - c2.y, len: Math.hypot(c3.x - c2.x, c3.y - c2.y) };
@@ -646,7 +559,6 @@ function evaluateRectangleQuad(corners, points, metrics) {
   const ratio13 = Math.min(e1.len, e3.len) / Math.max(e1.len, e3.len);
   if (ratio02 < 0.50 || ratio13 < 0.50) return null;
 
-  // Check right angles at corners
   const edges = [e0, e1, e2, e3];
   for (let i = 0; i < 4; i++) {
     const curr = edges[i];
@@ -655,8 +567,6 @@ function evaluateRectangleQuad(corners, points, metrics) {
     if (Math.abs(dot) > 0.45) return null;
   }
 
-  // 2. Estimate orientation using Circular Mean Modulo 90° (period pi/2)
-  // Maps 4*theta onto unit circle to prevent wrap-boundary artifacts
   let sumSin4 = 0;
   let sumCos4 = 0;
   for (let i = 0; i < 4; i++) {
@@ -664,9 +574,8 @@ function evaluateRectangleQuad(corners, points, metrics) {
     sumSin4 += Math.sin(4 * ang);
     sumCos4 += Math.cos(4 * ang);
   }
-  const rawRotation = 0.25 * Math.atan2(sumSin4, sumCos4); // within [-pi/4, pi/4]
+  const rawRotation = 0.25 * Math.atan2(sumSin4, sumCos4);
 
-  // 3. Compute dimensions accurately mapped to horizontal (u) and vertical (v) in rotated frame
   const cosR = Math.cos(rawRotation);
   const sinR = Math.sin(rawRotation);
 
@@ -691,7 +600,6 @@ function evaluateRectangleQuad(corners, points, metrics) {
     y: (c0.y + c1.y + c2.y + c3.y) / 4
   };
 
-  // 4. Test Axis-Aligned (theta = 0) vs Rotated (theta = rawRotation)
   const errorRotated = computeRectangleBoundaryError(points, center, w, h, rawRotation);
   const errorAligned = computeRectangleBoundaryError(points, center, w, h, 0);
 
@@ -699,7 +607,6 @@ function evaluateRectangleQuad(corners, points, metrics) {
   let rawError = errorRotated;
   let isAxisAligned = false;
 
-  // Prefer axis alignment if rotation is tiny (< 2.5 degrees) or if aligned error is comparable
   if (Math.abs(rawRotation) <= SHAPE_CONFIG.axisAlignedSnapAngleRad ||
     (Math.abs(rawRotation) < 0.10 && errorAligned <= errorRotated + SHAPE_CONFIG.axisAlignedErrorTolerance)) {
     finalRotation = 0;
@@ -709,7 +616,6 @@ function evaluateRectangleQuad(corners, points, metrics) {
 
   if (rawError > SHAPE_CONFIG.maxPolygonEdgeError) return null;
 
-  // 5. Square vs Rectangle Decision
   const maxDim = Math.max(w, h);
   const minDim = Math.min(w, h);
   const isSquare = (maxDim - minDim) / maxDim < SHAPE_CONFIG.squareAspectRatioThreshold;
@@ -770,16 +676,11 @@ function computeRectangleBoundaryError(points, center, w, h, rotation) {
   return meanDist / Math.max((w + h), 1) * 2;
 }
 
-/**
- * 6. REGULAR POLYGON CANDIDATE (5 to 8 sides)
- * Relative side-length threshold relative to expected length (perimeter / k).
- */
 function fitRegularPolygonCandidate(points, metrics, corners) {
   if (!metrics.isClosed || metrics.diagonal < SHAPE_CONFIG.minStrokeSpanPx) return null;
   const k = corners.length;
   if (k < 5 || k > 8) return null;
 
-  // 1. Structural Check: Verify side lengths are substantial relative to expected (perim / k)
   let totalPerim = 0;
   const sideLengths = [];
   for (let i = 0; i < k; i++) {
@@ -793,11 +694,9 @@ function fitRegularPolygonCandidate(points, metrics, corners) {
   const minSide = Math.min(...sideLengths);
   const maxSide = Math.max(...sideLengths);
 
-  // Each side must be at least 35% of the expected regular side length
   if (minSide < expectedSide * 0.35) return null;
   if (minSide / maxSide < 0.40) return null;
 
-  // 2. Corner angles check
   const expectedTurn = (Math.PI * 2) / k;
   for (let i = 0; i < k; i++) {
     const prev = corners[(i - 1 + k) % k];
@@ -811,7 +710,6 @@ function fitRegularPolygonCandidate(points, metrics, corners) {
     if (Math.abs(turn - expectedTurn) > 0.50) return null;
   }
 
-  // 3. Radial distance consistency from center
   let sumR = 0;
   const cornerRadii = [];
   const cornerAngles = [];
@@ -836,7 +734,6 @@ function fitRegularPolygonCandidate(points, metrics, corners) {
   const penaltyKey = `polygon${k}` in SHAPE_CONFIG.complexityPenalties ? `polygon${k}` : 'polygon8';
   const penalty = SHAPE_CONFIG.complexityPenalties[penaltyKey] || 0.020;
 
-  // 4. Compute geometric distance from all resampled points to regular polygon edges
   const rot = cornerAngles[0];
   const regVertices = [];
   for (let i = 0; i < k; i++) {
@@ -885,9 +782,6 @@ function fitRegularPolygonCandidate(points, metrics, corners) {
   };
 }
 
-/**
- * 7. FIVE-POINT STAR CANDIDATE
- */
 function fitStarCandidate(points, metrics, corners) {
   if (!metrics.isClosed || metrics.diagonal < SHAPE_CONFIG.minStrokeSpanPx) return null;
   if (corners.length !== 10) return null;
@@ -933,28 +827,20 @@ function fitStarCandidate(points, metrics, corners) {
   };
 }
 
-/**
- * MASTER SHAPE RECOGNIZER
- */
 function recognizeGeometricShape(graphPoints, width, height, graphToCanvas, canvasToGraph) {
   if (!graphPoints || graphPoints.length < 3) return null;
 
   const pixelPoints = graphPoints.map(pt => graphToCanvas(pt.x, pt.y, width, height));
 
-  // Store raw points export for debug/replay fixtures
   lastRecognitionDebug.rawStrokeExport = graphPoints.map(pt => ({
     x: Number(pt.x.toFixed(4)),
     y: Number(pt.y.toFixed(4))
   }));
 
-  // 1. Clean closing seam overlap and endpoint hold duplicates
   const cleanedSeam = trimClosedSeamOverlap(pixelPoints);
-
-  // 2. Uniform arc-length resampling
   const resampled = resampleStroke(cleanedSeam);
   if (resampled.length < 4) return null;
 
-  // 3. Compute stroke metrics
   const metrics = computeStrokeMetrics(resampled);
   if (metrics.diagonal < SHAPE_CONFIG.minStrokeSpanPx && metrics.pathLength < SHAPE_CONFIG.minStrokeSpanPx) {
     return null;
@@ -962,11 +848,9 @@ function recognizeGeometricShape(graphPoints, width, height, graphToCanvas, canv
 
   const evaluatedCandidates = [];
 
-  // Line candidate
   const lineCand = fitLineCandidate(resampled, metrics);
   if (lineCand) evaluatedCandidates.push(lineCand);
 
-  // Closed shape candidates
   if (metrics.isClosed) {
     const { rawCorners, cleanedCorners } = findCornerPeaks(resampled);
 
@@ -985,7 +869,6 @@ function recognizeGeometricShape(graphPoints, width, height, graphToCanvas, canv
     const rectCand = fitRectangleCandidate(resampled, metrics, cleanedCorners);
     if (rectCand) evaluatedCandidates.push(rectCand);
 
-    // Circles and ellipses are evaluated independently of corner counts
     const circleCand = fitCircleCandidate(resampled, metrics, cleanedCorners.length);
     if (circleCand) evaluatedCandidates.push(circleCand);
 
@@ -993,7 +876,6 @@ function recognizeGeometricShape(graphPoints, width, height, graphToCanvas, canv
     if (ellipseCand) evaluatedCandidates.push(ellipseCand);
   }
 
-  // Update telemetry
   lastRecognitionDebug.timestamp = Date.now();
   lastRecognitionDebug.strokeMetrics = {
     pointsCount: pixelPoints.length,
@@ -1009,11 +891,9 @@ function recognizeGeometricShape(graphPoints, width, height, graphToCanvas, canv
     return null;
   }
 
-  // Sort candidates by normalized error (lowest error is best)
   evaluatedCandidates.sort((a, b) => a.normalizedError - b.normalizedError);
   const best = evaluatedCandidates[0];
 
-  // Ambiguity check
   if (evaluatedCandidates.length > 1) {
     const runnerUp = evaluatedCandidates[1];
     if (best.type !== runnerUp.type && Math.abs(best.normalizedError - runnerUp.normalizedError) < 0.005) {
@@ -1036,9 +916,6 @@ function recognizeGeometricShape(graphPoints, width, height, graphToCanvas, canv
   };
 }
 
-/**
- * Converts shape geometry from Canvas pixel space into Mathematical Graph space.
- */
 function convertGeometryToGraph(type, geom, width, height, canvasToGraph) {
   switch (type) {
     case 'line':
@@ -1124,4 +1001,3 @@ if (typeof module !== 'undefined' && module.exports) {
     convertGeometryToGraph
   };
 }
-

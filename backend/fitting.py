@@ -5,7 +5,6 @@ from models import FitCandidate, Point
 import time
 
 def format_coeff(val: float, decimals: int = 2) -> str:
-    """Formats a float cleanly for equation display."""
     if abs(val) < 1e-5:
         return "0"
     rounded = round(val, decimals)
@@ -215,35 +214,26 @@ def format_sine_equation(A: float, B: float, C: float, D: float, domain: Tuple[f
     text = f"{dep_var} = {A_s} sin({inner_s}){D_s}{dom_text}"
     return latex, text
 
-# ==========================================
-# 2D GEOMETRIC DISTANCE METRIC IN GRAPH SPACE
-# ==========================================
-
 def compute_geometric_error(stroke_pts: np.ndarray, curve_pts: List[Point]) -> float:
-    """
-    Computes common 2D Euclidean point-to-curve RMS distance in graph space.
-    This provides an isotropic, orientation-independent error metric.
-    """
     if not curve_pts or len(curve_pts) < 2 or len(stroke_pts) == 0:
         return float('inf')
 
     c_arr = np.array([[p.x, p.y] for p in curve_pts], dtype=np.float64)
-    p1 = c_arr[:-1]  # (M-1, 2)
-    p2 = c_arr[1:]   # (M-1, 2)
-    seg_vec = p2 - p1  # (M-1, 2)
-    seg_len_sq = np.sum(seg_vec ** 2, axis=1)  # (M-1,)
+    p1 = c_arr[:-1]
+    p2 = c_arr[1:]
+    seg_vec = p2 - p1
+    seg_len_sq = np.sum(seg_vec ** 2, axis=1)
     seg_len_sq = np.maximum(seg_len_sq, 1e-8)
 
-    # For each stroke point, find distance to each segment
-    pts = stroke_pts[:, np.newaxis, :]  # (N, 1, 2)
-    v_vec = pts - p1[np.newaxis, :, :]  # (N, M-1, 2)
+    pts = stroke_pts[:, np.newaxis, :]
+    v_vec = pts - p1[np.newaxis, :, :]
 
     t = np.sum(v_vec * seg_vec[np.newaxis, :, :], axis=2) / seg_len_sq[np.newaxis, :]
-    t = np.clip(t, 0.0, 1.0)  # (N, M-1)
+    t = np.clip(t, 0.0, 1.0)
 
     proj = p1[np.newaxis, :, :] + t[:, :, np.newaxis] * seg_vec[np.newaxis, :, :]
-    dists_sq = np.sum((pts - proj) ** 2, axis=2)  # (N, M-1)
-    min_dists_sq = np.min(dists_sq, axis=1)  # (N,)
+    dists_sq = np.sum((pts - proj) ** 2, axis=2)
+    min_dists_sq = np.min(dists_sq, axis=1)
 
     return float(np.sqrt(np.mean(min_dists_sq)))
 
@@ -275,10 +265,6 @@ def make_plot_points(u_vals: np.ndarray, v_vals: np.ndarray, orientation: str) -
         return [Point(x=round(float(u), 4), y=round(float(v), 4)) for u, v in zip(u_vals, v_vals)]
     else:
         return [Point(x=round(float(v), 4), y=round(float(u), 4)) for u, v in zip(u_vals, v_vals)]
-
-# ==========================================
-# INDIVIDUAL FAMILY FITTERS
-# ==========================================
 
 def fit_linear(u: np.ndarray, v: np.ndarray, domain: Tuple[float, float], orientation: str, stroke_pts: np.ndarray) -> FitCandidate:
     mu_u = float(np.mean(u))
@@ -512,19 +498,11 @@ def fit_sine(u: np.ndarray, v: np.ndarray, domain: Tuple[float, float], orientat
         plot_points=plot_pts
     )
 
-# ==========================================
-# MASTER FITTING & ORIENTATION SELECTION
-# ==========================================
-
 def fit_all_families(
     stroke_pts: np.ndarray,
     valid_orientations: List[str],
     requested_families: Optional[List[str]] = None
 ) -> Tuple[bool, List[FitCandidate], Optional[str], Dict[str, float]]:
-    """
-    Fits supported curve families across all valid orientations, compares them using
-    the common 2D geometric error metric, and returns quality-gated ranked candidates.
-    """
     timings: Dict[str, float] = {}
     t_start = time.perf_counter()
 
@@ -536,7 +514,6 @@ def fit_all_families(
     span_x = float(np.max(resamp_x) - np.min(resamp_x))
     span_y = float(np.max(resamp_y) - np.min(resamp_y))
 
-    # Evaluate all valid orientations
     for orient in valid_orientations:
         if orient == "y_of_x":
             sort_idx = np.argsort(resamp_x)
@@ -549,7 +526,6 @@ def fit_all_families(
             v = resamp_x[sort_idx]
             dom = (float(np.min(u)), float(np.max(u)))
 
-        # Fit requested families
         if 'linear' in allowed:
             t0 = time.perf_counter()
             c = fit_linear(u, v, dom, orient, stroke_pts)
@@ -583,24 +559,20 @@ def fit_all_families(
     if not all_evaluated:
         return False, [], "No supported curve families selected.", timings
 
-    # Quality Gate Definition
     def is_candidate_adequate(c: FitCandidate) -> Tuple[bool, Optional[str]]:
         v_data = resamp_y if c.orientation == "y_of_x" else resamp_x
         v_std = float(np.std(v_data))
         v_span = float(np.max(v_data) - np.min(v_data))
         noise_floor = 0.15
 
-        # Flat line check
         if v_std <= noise_floor:
             if c.geom_error <= noise_floor * 1.5:
                 return True, None
             return False, f"Geometric error {c.geom_error:.2f} exceeds noise floor."
 
-        # Significant variation: model must explain at least 45% of variance
         if c.r_squared < 0.45 and c.geom_error > noise_floor * 1.5:
             return False, f"R² ({c.r_squared:.2f}) is too low (explains < 45% of variation)."
 
-        # Maximum geometric error ceiling
         max_geom = min(1.40, max(0.40, 0.45 * max(span_x, span_y)))
         if c.geom_error > max_geom:
             return False, f"Geometric error ({c.geom_error:.2f}) exceeds maximum allowed tolerance ({max_geom:.2f})."
@@ -610,7 +582,6 @@ def fit_all_families(
     is_user_forced = (requested_families is not None and len(requested_families) == 1)
 
     if is_user_forced:
-        # Sort candidates by geometric error to pick the best orientation for this forced family
         all_evaluated.sort(key=lambda c: c.geom_error)
         cand = all_evaluated[0]
         adequate, reason = is_candidate_adequate(cand)
@@ -620,7 +591,6 @@ def fit_all_families(
         timings['total_ms'] = round((time.perf_counter() - t_start) * 1000, 2)
         return True, [cand], None, timings
 
-    # Progressive Complexity Hurdles (evaluated per orientation)
     for orient in valid_orientations:
         cands_for_orient = {c.family: c for c in all_evaluated if c.orientation == orient}
         lin = cands_for_orient.get('linear')
@@ -649,7 +619,6 @@ def fit_all_families(
             if cycles < 0.70 or sine_c.r_squared < 0.60:
                 sine_c.score += 0.50 * scale
 
-    # Filter through Quality Gate
     valid_cands = []
     for c in all_evaluated:
         adequate, _ = is_candidate_adequate(c)
@@ -660,10 +629,8 @@ def fit_all_families(
         timings['total_ms'] = round((time.perf_counter() - t_start) * 1000, 2)
         return False, [], "No supported equation fits this stroke well.", timings
 
-    # Sort all valid candidates across orientations by geometric score
     valid_cands.sort(key=lambda c: c.score)
 
-    # Return top 3 distinct candidate models
     seen_keys = set()
     top_candidates = []
     for c in valid_cands:

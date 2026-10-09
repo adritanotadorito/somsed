@@ -1,40 +1,22 @@
-/**
- * Reverse Desmos - Milestone 3: Mathematical Equations & Numerical Shape Properties
- * 
- * Manages:
- * 1. Tool Modes: 'draw' (freehand & draw-and-hold snapping) and 'edit' (select & transform).
- * 2. Shape Data Model: typed shapes (line, circle, ellipse, rectangle, square, triangle, polygon, star, freehand).
- * 3. Exact Mathematical Equations: Live derivation and KaTeX display of equations directly from graph geometry.
- * 4. Numerical Shape Properties Panel: Inspect and precisely adjust coordinates and dimensions in graph units.
- * 5. Stable Shape Badges: Canvas badges matched to collapsible equation cards in the results panel.
- * 6. Non-destructive preview and live locked adjustment with real-time equation updating.
- * 7. Post-commit shape selection, manipulation handles, and Clear operations.
- * 8. Development-only Debug Diagnostics Telemetry overlay.
- */
-
-// ==========================================
-// 1. CONSTANTS & CONFIGURATION
-// ==========================================
 const DOMAIN = { min: -10, max: 10 };
 const RANGE = { min: -10, max: 10 };
 let zoomScale = 1.0;
 
 const SNAP_CONFIG = {
-  holdDurationMs: 600,       // Duration pointer must pause to trigger recognition (ms)
-  holdTolerancePx: 5         // Movement jitter radius allowed while holding still (CSS pixels)
+  holdDurationMs: 600,
+  holdTolerancePx: 5
 };
 
-// Desmos Palette with Green as Primary Accent (#2d9238)
 const DESMOS_PALETTE = [
-  '#2d9238', // Desmos green (Primary theme accent)
-  '#2d70b3', // Desmos blue
-  '#fa7e19', // Desmos orange
-  '#d62728', // Desmos red
-  '#6042a6', // Desmos purple
-  '#1e293b', // Dark slate
-  '#0d9488', // Teal
-  '#c026d3', // Fuchsia
-  '#475569'  // Slate
+  '#2d9238',
+  '#2d70b3',
+  '#fa7e19',
+  '#d62728',
+  '#6042a6',
+  '#1e293b',
+  '#0d9488',
+  '#c026d3',
+  '#475569'
 ];
 
 function getShapeColor(shape, index) {
@@ -45,36 +27,33 @@ function getShapeColor(shape, index) {
 
 const STYLES = {
   gridBackground: '#ffffff',
-  gridLine: '#e2e8f0',          // Subtle grey for 1-unit increments
-  gridLineBold: '#cbd5e1',      // Medium grey for 5-unit increments
-  axisLine: '#334155',          // Dark slate for major X & Y axes (x=0, y=0)
-  axisText: '#64748b',          // Coordinate labels
-  strokeColor: '#2d9238',       // Green default stroke
-  snapPreviewColor: '#2d9238',  // Green live snapped shape preview
-  selectedColor: '#2d9238',     // Green outline for selected shapes in Edit mode
-  handleColor: '#2d9238',       // Green for adjustment & transform handles
-  centerDotColor: '#dc2626',    // Red dot for center of closed shapes
-  debugCornerColor: '#f59e0b',  // Amber dot for detected corners in debug mode
-  strokeWidth: 2.5,             // Base stroke width in CSS pixels
+  gridLine: '#e2e8f0',
+  gridLineBold: '#cbd5e1',
+  axisLine: '#334155',
+  axisText: '#64748b',
+  strokeColor: '#2d9238',
+  snapPreviewColor: '#2d9238',
+  selectedColor: '#2d9238',
+  handleColor: '#2d9238',
+  centerDotColor: '#dc2626',
+  debugCornerColor: '#f59e0b',
+  strokeWidth: 2.5,
   fontFamily: 'Inter, system-ui, sans-serif'
 };
 
-// ==========================================
-// 2. STATE MANAGEMENT
-// ==========================================
-let toolMode = 'draw';          // 'draw' | 'edit'
-let appState = 'idle';          // 'idle' | 'drawing' | 'adjustingShape' | 'transformingShape'
-let isDebugVisible = false;     // Debug diagnostics panel visibility
+let toolMode = 'draw';
+let appState = 'idle';
+let isDebugVisible = false;
 
-let shapes = [];                // Committed shapes list in graph coordinates
-let currentStroke = null;       // Freehand stroke points in graph coordinates
+let shapes = [];
+let currentStroke = null;
 let rawStrokeBackup = null;
 
-let snappedShape = null;        // Snapped preview shape in graph coordinates
-let isAdjustingActively = false; // Prevents micro-tremors from shifting shape immediately upon snap
-let snapAnchor = null;          // Canvas pixel anchor at moment of snap
+let snappedShape = null;
+let isAdjustingActively = false;
+let snapAnchor = null;
 
-let selectedShapeId = null;     // Selected shape in Edit mode
+let selectedShapeId = null;
 let activeHandle = null;
 let handleDragStart = null;
 
@@ -86,13 +65,9 @@ let displayWidth = 0;
 let displayHeight = 0;
 let shapeIdCounter = 1;
 
-// Milestone 4: Backend Equation Fitting Configuration & Analytics
 const BACKEND_FIT_URL = (window.SOMSED_CONFIG && window.SOMSED_CONFIG.BACKEND_URL) || 'http://127.0.0.1:8001/fit';
 let currentFitRequestId = 0;
 
-/**
- * Safe helper to trigger analytics events through SomsedAnalytics.
- */
 function trackAnalyticsEvent(eventName, properties = {}) {
   try {
     if (window.SomsedAnalytics && typeof window.SomsedAnalytics.trackEvent === 'function') {
@@ -101,9 +76,6 @@ function trackAnalyticsEvent(eventName, properties = {}) {
   } catch (_) { }
 }
 
-// ==========================================
-// 3. DOM ELEMENT REFERENCES
-// ==========================================
 const canvas = document.getElementById('graph-canvas');
 const ctx = canvas.getContext('2d');
 const clearBtn = document.getElementById('clear-btn');
@@ -122,19 +94,13 @@ const debugReplayBox = document.getElementById('debug-replay-box');
 const debugReplayInput = document.getElementById('debug-replay-input');
 const debugRunReplayBtn = document.getElementById('debug-run-replay-btn');
 
-// Milestone 3: Equations DOM Elements
 const equationsCard = document.getElementById('equations-card');
 const equationsList = document.getElementById('equations-list');
 const equationCountBadge = document.getElementById('equation-count-badge');
 
-// Shape Properties Panel DOM Elements
 const propertiesCard = document.getElementById('properties-card');
 const propertiesShapeBadge = document.getElementById('properties-shape-badge');
 const propertiesBody = document.getElementById('properties-body');
-
-// ==========================================
-// 4. AUTHORITATIVE COORDINATE CONVERSION & VIEWPORT TRANSFORMS
-// ==========================================
 
 function getPixelsPerUnit() {
   return displayWidth / (DOMAIN.max - DOMAIN.min);
@@ -174,10 +140,6 @@ function updateStatsDisplay() {
   }
 }
 
-// ==========================================
-// 5. CANVAS SIZING & HIGH-DPI ISOTROPIC SUPPORT
-// ==========================================
-
 function resizeCanvas() {
   const container = canvas.parentElement;
   if (!container) return;
@@ -196,11 +158,9 @@ function resizeCanvas() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
 
-  // Equal scaling / isotropic aspect-ratio:
-  // Preserves [-10, 10] (base span 20 / zoomScale) along the shorter dimension
   const baseSpan = 20 / (zoomScale || 1.0);
   if (displayWidth >= displayHeight) {
-    // Width is greater: height spans baseSpan (-baseSpan/2 to +baseSpan/2)
+
     const pxPerUnit = displayHeight / baseSpan;
     const xSpan = displayWidth / pxPerUnit;
     const halfX = xSpan / 2;
@@ -209,7 +169,7 @@ function resizeCanvas() {
     RANGE.min = -baseSpan / 2;
     RANGE.max = baseSpan / 2;
   } else {
-    // Height is greater: width spans baseSpan (-baseSpan/2 to +baseSpan/2)
+
     const pxPerUnit = displayWidth / baseSpan;
     const ySpan = displayHeight / pxPerUnit;
     const halfY = ySpan / 2;
@@ -223,10 +183,6 @@ function resizeCanvas() {
   render();
 }
 
-// ==========================================
-// 6. SHAPE RENDERING & CANVAS LABELS
-// ==========================================
-
 function drawGrid(ctx, width, height) {
   ctx.fillStyle = STYLES.gridBackground;
   ctx.fillRect(0, 0, width, height);
@@ -236,7 +192,6 @@ function drawGrid(ctx, width, height) {
   const yStart = Math.ceil(RANGE.min);
   const yEnd = Math.floor(RANGE.max);
 
-  // Vertical grid lines (1-unit and 5-unit increments)
   for (let x = xStart; x <= xEnd; x++) {
     const { x: cx } = graphToCanvas(x, 0, width, height);
     if (x === 0) continue;
@@ -248,7 +203,6 @@ function drawGrid(ctx, width, height) {
     ctx.stroke();
   }
 
-  // Horizontal grid lines (1-unit and 5-unit increments)
   for (let y = yStart; y <= yEnd; y++) {
     const { y: cy } = graphToCanvas(0, y, width, height);
     if (y === 0) continue;
@@ -260,7 +214,6 @@ function drawGrid(ctx, width, height) {
     ctx.stroke();
   }
 
-  // Major Axes (x=0, y=0)
   const origin = graphToCanvas(0, 0, width, height);
   ctx.strokeStyle = STYLES.axisLine;
   ctx.lineWidth = 2;
@@ -279,7 +232,6 @@ function drawGrid(ctx, width, height) {
     ctx.stroke();
   }
 
-  // Ticks & Coordinate Numbers
   ctx.fillStyle = STYLES.axisText;
   ctx.font = `11px ${STYLES.fontFamily}`;
 
@@ -315,7 +267,6 @@ function drawGrid(ctx, width, height) {
     ctx.fillText(y.toString(), clampedOriginX - 5, pos.y);
   }
 
-  // Axes Labels
   ctx.font = `bold 12px ${STYLES.fontFamily}`;
   ctx.fillStyle = STYLES.axisLine;
   ctx.textAlign = 'right';
@@ -344,7 +295,6 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
       const isFitted = shape.fitData && shape.fitData.success && shape.showFit !== false && shape.showOverlay !== false;
       const showSketch = shape.showSketch !== false;
 
-      // 1. Original Sketch Stroke: rendered thinner in muted neutral tone when fitted
       if (pts && pts.length > 0 && showSketch) {
         ctx.save();
         if (isFitted) {
@@ -375,7 +325,6 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
         ctx.restore();
       }
 
-      // 2. Fitted Function Curve Overlay (Prominent Emerald Green, ~2.4px thick)
       if (isFitted) {
         const candidates = shape.fitData.candidates || [];
         const candidateIndex = (shape.selectedCandidateIndex >= 0 && shape.selectedCandidateIndex < candidates.length)
@@ -396,7 +345,6 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
           }
           ctx.stroke();
 
-          // Domain boundary endpoint dots: rendered ONLY when item is selected/edited
           if (isSelected) {
             const startPt = graphToCanvas(samples[0].x, samples[0].y, displayWidth, displayHeight);
             const endPt = graphToCanvas(samples[samples.length - 1].x, samples[samples.length - 1].y, displayWidth, displayHeight);
@@ -533,13 +481,11 @@ function drawShapeHandles(ctx, shape) {
   } else if (type === 'triangle' && geometry.center && geometry.vertices) {
     const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
 
-    // Center handle
     ctx.fillStyle = STYLES.centerDotColor;
     ctx.beginPath();
     ctx.arc(c.x, c.y, 4, 0, Math.PI * 2);
     ctx.fill();
 
-    // Resize/rotate handle at vertex 0
     if (geometry.vertices.length > 0) {
       const v0 = graphToCanvas(geometry.vertices[0].x, geometry.vertices[0].y, displayWidth, displayHeight);
       ctx.fillStyle = STYLES.handleColor;
@@ -595,9 +541,6 @@ function drawShapeHandles(ctx, shape) {
   ctx.restore();
 }
 
-/**
- * Calculates optimal label anchor position on canvas for any shape.
- */
 function getShapeLabelPosition(shape) {
   const { type, geometry } = shape;
   if (!geometry) return { x: 30, y: 30 };
@@ -680,7 +623,6 @@ function getShapeLabelPosition(shape) {
     }
   }
 
-  // Keep labels comfortably within canvas bounds
   const padX = 40;
   const padY = 16;
   return {
@@ -689,9 +631,6 @@ function getShapeLabelPosition(shape) {
   };
 }
 
-/**
- * Draws crisp matching shape labels directly on the canvas near each shape.
- */
 function drawShapeCanvasLabels(ctx) {
   const shapesToLabel = [...shapes];
   if (appState === 'adjustingShape' && snappedShape) {
@@ -716,7 +655,6 @@ function drawShapeCanvasLabels(ctx) {
     const badgeH = 20;
     const radius = 5;
 
-    // Badge Background
     ctx.beginPath();
     ctx.roundRect(pos.x - badgeW / 2, pos.y - badgeH / 2, badgeW, badgeH, radius);
     if (isSelected) {
@@ -733,7 +671,6 @@ function drawShapeCanvasLabels(ctx) {
     ctx.fill();
     ctx.stroke();
 
-    // Badge Text
     ctx.fillStyle = '#ffffff';
     ctx.fillText(labelText, pos.x, pos.y + 0.5);
   }
@@ -741,9 +678,6 @@ function drawShapeCanvasLabels(ctx) {
   ctx.restore();
 }
 
-/**
- * Draws debug corner markers if debug mode is active.
- */
 function drawDebugCorners(ctx) {
   if (!isDebugVisible || !lastRecognitionDebug.cleanedCorners) return;
 
@@ -786,17 +720,10 @@ function render() {
   drawDebugCorners(ctx);
 }
 
-// ==========================================
-// 7. MATHEMATICAL EQUATIONS UI & FORMATTING
-// ==========================================
-
 function getShapeIcon(type) {
   return '';
 }
 
-/**
- * Generates stable, readable labels such as "Circle 1" or "Triangle 2".
- */
 function generateShapeLabel(type, sides = null) {
   let prefix = 'Shape';
   switch (type) {
@@ -844,9 +771,57 @@ function copyTextToClipboard(text, btnElement) {
   });
 }
 
-/**
- * Constructs an interactive, flat Desmos-style row for a shape's mathematical equations.
- */
+function createFamilySelect(shape) {
+  const famSelect = document.createElement('select');
+  famSelect.className = 'fit-family-select';
+  famSelect.title = 'Select a specific curve family to fit';
+  famSelect.innerHTML = `
+    <option value="">Auto Best Fit</option>
+    <option value="linear">Linear</option>
+    <option value="quadratic">Quadratic</option>
+    <option value="cubic">Cubic</option>
+    <option value="absolute_value">Absolute Value</option>
+    <option value="sine">Sine Wave</option>
+  `;
+  famSelect.value = shape.requestedFamily || '';
+
+  ['pointerdown', 'mousedown', 'click', 'touchstart', 'touchend'].forEach(evtName => {
+    famSelect.addEventListener(evtName, (e) => e.stopPropagation());
+  });
+
+  famSelect.addEventListener('change', (e) => {
+    e.stopPropagation();
+    const chosenFamily = famSelect.value || '';
+    shape.requestedFamily = chosenFamily;
+
+    if (shape.fitData && shape.fitData.candidates && shape.fitData.candidates.length > 0) {
+      if (!chosenFamily) {
+        shape.selectedCandidateIndex = 0;
+        updateEquationsUI();
+        refreshPropertiesInputsIfSelected(shape.id);
+        render();
+        return;
+      }
+      const matchIdx = shape.fitData.candidates.findIndex(c => c.family === chosenFamily);
+      if (matchIdx !== -1) {
+        shape.selectedCandidateIndex = matchIdx;
+        updateEquationsUI();
+        refreshPropertiesInputsIfSelected(shape.id);
+        render();
+        return;
+      }
+    }
+
+    if (shape.showFit !== false && shape.fitStatus !== 'loading') {
+      fitFreehandStroke(shape, chosenFamily || null);
+    } else {
+      updateEquationsUI();
+    }
+  });
+
+  return famSelect;
+}
+
 function createEquationCard(shape, eqData, isSelected, isPreview) {
   const card = document.createElement('div');
   card.className = `equation-item ${isSelected ? 'is-selected' : ''}`;
@@ -856,7 +831,6 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
   const shapeColor = getShapeColor(shape, shapeIdx);
   card.style.borderLeftColor = isSelected ? shapeColor : 'transparent';
 
-  // Header
   const header = document.createElement('div');
   header.className = 'equation-item-header';
 
@@ -911,7 +885,6 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
   }
   header.appendChild(titleTag);
 
-  // Actions (Copy LaTeX, Copy Text, Delete)
   const actions = document.createElement('div');
   actions.className = 'equation-actions';
 
@@ -966,7 +939,6 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
   header.appendChild(actions);
   card.appendChild(header);
 
-  // Content Box
   if (eqData.isFreehand) {
     if (shape.fitStatus === 'loading') {
       const loadingBox = document.createElement('div');
@@ -1066,7 +1038,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       }
       card.appendChild(rejBox);
     } else if (eqData.isFitted) {
-      // Poor Fit Warning Banner if forced or inadequate
+
       if (eqData.isPoorFit) {
         const warnBox = document.createElement('div');
         warnBox.className = 'fit-warning-box';
@@ -1074,7 +1046,6 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
         card.appendChild(warnBox);
       }
 
-      // Candidate selector pills
       if (eqData.candidates && eqData.candidates.length > 1) {
         const candContainer = document.createElement('div');
         candContainer.className = 'fit-candidates-container';
@@ -1089,6 +1060,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
           pill.addEventListener('click', (e) => {
             e.stopPropagation();
             shape.selectedCandidateIndex = idx;
+            shape.requestedFamily = cand.family;
             updateEquationsUI();
             refreshPropertiesInputsIfSelected(shape.id);
             render();
@@ -1098,7 +1070,6 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
         card.appendChild(candContainer);
       }
 
-      // Math Box
       const mathBox = document.createElement('div');
       mathBox.className = 'equation-math-box';
       const formulaDiv = document.createElement('div');
@@ -1115,20 +1086,19 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       mathBox.appendChild(statsDiv);
       card.appendChild(mathBox);
 
-      // Fit Actions Row (with separate Show sketch and Show fit controls)
       const actionRow = document.createElement('div');
       actionRow.className = 'fit-action-row';
 
       const sketchBtn = document.createElement('button');
       sketchBtn.type = 'button';
-      sketchBtn.className = `btn-toggle-sketch ${shape.showSketch !== false ? 'active' : ''}`;
-      sketchBtn.textContent = shape.showSketch !== false ? 'Sketch: On' : 'Sketch: Off';
+      const isSketchVisible = (shape.showSketch !== false);
+      sketchBtn.className = `btn-toggle-sketch ${isSketchVisible ? 'active' : ''}`;
+      sketchBtn.textContent = isSketchVisible ? 'Sketch: On' : 'Sketch: Off';
       sketchBtn.title = 'Toggle visibility of original sketch';
       sketchBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        shape.showSketch = !(shape.showSketch !== false);
-        sketchBtn.className = `btn-toggle-sketch ${shape.showSketch ? 'active' : ''}`;
-        sketchBtn.textContent = shape.showSketch ? 'Sketch: On' : 'Sketch: Off';
+        shape.showSketch = !isSketchVisible;
+        updateEquationsUI();
         refreshPropertiesInputsIfSelected(shape.id);
         render();
       });
@@ -1145,24 +1115,25 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
         const nextState = !isFitVisible;
         shape.showFit = nextState;
         shape.showOverlay = nextState;
-        fitOverlayBtn.className = `btn-toggle-fit ${nextState ? 'active' : ''}`;
-        fitOverlayBtn.textContent = nextState ? 'Fit: On' : 'Fit: Off';
+        if (!nextState) {
+          currentFitRequestId++;
+          if (shape.fitStatus === 'loading') {
+            shape.fitStatus = (shape.fitData && shape.fitData.success) ? 'success' : null;
+          }
+        } else if (!shape.fitData || !shape.fitData.success) {
+          if (shape.fitStatus !== 'loading') {
+            fitFreehandStroke(shape, shape.requestedFamily || null);
+            return;
+          }
+        }
+        updateEquationsUI();
         refreshPropertiesInputsIfSelected(shape.id);
         render();
       });
       actionRow.appendChild(fitOverlayBtn);
 
-      const famSelect = document.createElement('select');
-      famSelect.className = 'fit-family-select';
-      famSelect.title = 'Select a specific curve family to fit';
-      famSelect.innerHTML = `
-        <option value="">Auto Best Fit</option>
-        <option value="linear">Linear</option>
-        <option value="quadratic">Quadratic</option>
-        <option value="cubic">Cubic</option>
-        <option value="absolute_value">Absolute Value</option>
-        <option value="sine">Sine Wave</option>
-      `;
+      const famSelect = createFamilySelect(shape);
+      actionRow.appendChild(famSelect);
 
       const refitBtn = document.createElement('button');
       refitBtn.type = 'button';
@@ -1172,15 +1143,13 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       refitBtn.textContent = 'Refit';
       refitBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const chosen = famSelect.value || null;
-        fitFreehandStroke(shape, chosen);
+        const chosen = shape.requestedFamily || famSelect.value || null;
+        fitFreehandStroke(shape, chosen || null);
       });
-
-      actionRow.appendChild(famSelect);
       actionRow.appendChild(refitBtn);
+
       card.appendChild(actionRow);
     } else {
-      // Unfitted initial state
       const freehandBox = document.createElement('div');
       freehandBox.className = 'equation-math-box';
       freehandBox.style.fontSize = '0.8rem';
@@ -1193,17 +1162,20 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
 
       const sketchBtn = document.createElement('button');
       sketchBtn.type = 'button';
-      sketchBtn.className = `btn-toggle-sketch ${shape.showSketch !== false ? 'active' : ''}`;
-      sketchBtn.textContent = shape.showSketch !== false ? 'Sketch: On' : 'Sketch: Off';
+      const isSketchVisible = (shape.showSketch !== false);
+      sketchBtn.className = `btn-toggle-sketch ${isSketchVisible ? 'active' : ''}`;
+      sketchBtn.textContent = isSketchVisible ? 'Sketch: On' : 'Sketch: Off';
       sketchBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        shape.showSketch = !(shape.showSketch !== false);
-        sketchBtn.className = `btn-toggle-sketch ${shape.showSketch ? 'active' : ''}`;
-        sketchBtn.textContent = shape.showSketch ? 'Sketch: On' : 'Sketch: Off';
+        shape.showSketch = !isSketchVisible;
+        updateEquationsUI();
         refreshPropertiesInputsIfSelected(shape.id);
         render();
       });
       actionRow.appendChild(sketchBtn);
+
+      const famSelect = createFamilySelect(shape);
+      actionRow.appendChild(famSelect);
 
       const fitBtn = document.createElement('button');
       fitBtn.type = 'button';
@@ -1211,13 +1183,13 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       fitBtn.textContent = 'Fit equation';
       fitBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        fitFreehandStroke(shape);
+        fitFreehandStroke(shape, shape.requestedFamily || famSelect.value || null);
       });
       actionRow.appendChild(fitBtn);
       card.appendChild(actionRow);
     }
   } else if (eqData.isMultiEdge) {
-    // Polygon / Closed multi-edge shape
+
     const summaryBox = document.createElement('div');
     summaryBox.className = 'equation-math-box';
 
@@ -1253,7 +1225,7 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
     summaryBox.appendChild(details);
     card.appendChild(summaryBox);
   } else {
-    // Single equation shape (Line, Circle, Ellipse)
+
     const mathBox = document.createElement('div');
     mathBox.className = 'equation-math-box';
 
@@ -1286,7 +1258,6 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
     card.appendChild(mathBox);
   }
 
-  // Click card to select shape and open properties
   card.addEventListener('click', () => {
     selectedShapeId = shape.id;
     setToolMode('edit');
@@ -1299,9 +1270,6 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
   return card;
 }
 
-/**
- * Updates the Mathematical Equations panel with all committed & live-adjusting shapes.
- */
 function updateEquationsUI() {
   if (!equationsList || !equationCountBadge) return;
 
@@ -1336,9 +1304,6 @@ function updateEquationsUI() {
   }
 }
 
-/**
- * Milestone 4: Performs asynchronous curve fitting via the FastAPI Python backend.
- */
 async function fitFreehandStroke(shape, requestedFamily = null) {
   if (!shape || shape.type !== 'freehand') return;
   const pts = shape.geometry?.points || shape.rawPoints;
@@ -1354,6 +1319,10 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
     refreshPropertiesInputsIfSelected(shape.id);
     render();
     return;
+  }
+
+  if (requestedFamily !== null) {
+    shape.requestedFamily = requestedFamily;
   }
 
   const thisRequestId = ++currentFitRequestId;
@@ -1373,7 +1342,7 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
   try {
     const payload = {
       points: pts.map(p => ({ x: Number(p.x), y: Number(p.y) })),
-      families: requestedFamily ? [requestedFamily] : ['linear', 'quadratic', 'cubic', 'absolute_value', 'sine'],
+      families: shape.requestedFamily ? [shape.requestedFamily] : ['linear', 'quadratic', 'cubic', 'absolute_value', 'sine'],
       stroke_id: shape.id
     };
 
@@ -1395,7 +1364,6 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
 
     const data = await response.json();
 
-    // Stale response guard: check if superseded, cleared, or removed
     if (shape.fitRequestId !== thisRequestId || !shapes.includes(shape)) {
       console.log('Discarding stale fit response for request', thisRequestId);
       return;
@@ -1405,7 +1373,7 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
       shape.fitStatus = 'success';
       shape.fitData = data;
       shape.selectedCandidateIndex = 0;
-      shape.showOverlay = true;
+      shape.showOverlay = (shape.showFit !== false);
       const best = data.candidates[0];
       trackAnalyticsEvent('fit_succeeded', {
         model_family: best.family,
@@ -1443,14 +1411,6 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
   }
 }
 
-// ==========================================
-// 8. NUMERICAL SHAPE & CURVE PROPERTIES PANEL
-// ==========================================
-
-/**
- * Computes common 2D Euclidean point-to-curve RMS distance in graph space.
- * Matches backend geometric distance calculation for exact orientation-independent evaluation.
- */
 function computeCurveGeometricError(strokePts, curvePts) {
   if (!strokePts || strokePts.length === 0 || !curvePts || curvePts.length < 2) {
     return 0;
@@ -1481,10 +1441,6 @@ function computeCurveGeometricError(strokePts, curvePts) {
   return Math.sqrt(sumMinDistSq / strokePts.length);
 }
 
-/**
- * Samples a mathematical equation directly from its parameters across its domain.
- * Generates fresh plot points rather than distorting sampled points.
- */
 function sampleCurvePoints(family, params, domain, orientation = 'y_of_x', numPoints = 180) {
   const uMin = (domain && domain.length >= 2) ? domain[0] : -10;
   const uMax = (domain && domain.length >= 2) ? domain[1] : 10;
@@ -1589,7 +1545,7 @@ function getNumericFieldValue(inputId, originalVal) {
   if (trimmed === '') throw new Error('Input field cannot be empty');
   const parsed = parseFloat(trimmed);
   if (isNaN(parsed) || !isFinite(parsed)) throw new Error('Must be a valid finite number');
-  // If user did not change the input, preserve untouched full precision
+
   const originalStr = input.dataset.originalVal;
   if (originalStr && trimmed === originalStr) {
     return originalVal;
@@ -1600,9 +1556,6 @@ function getNumericFieldValue(inputId, originalVal) {
   return parsed;
 }
 
-/**
- * Applies numerical parameter and domain edits to a fitted curve.
- */
 function applyCurveProperties(shape) {
   if (!shape || shape.type !== 'freehand' || !shape.fitData || !shape.fitData.candidates) return;
   const candidates = shape.fitData.candidates;
@@ -1616,7 +1569,7 @@ function applyCurveProperties(shape) {
   const newParams = {};
 
   try {
-    // 1. Read family parameters
+
     switch (fam) {
       case 'linear': {
         newParams.m = getNumericFieldValue('prop-curve-m', originalParams.m ?? 1);
@@ -1672,7 +1625,6 @@ function applyCurveProperties(shape) {
       }
     }
 
-    // 2. Read interval restrictions
     const origDomain = cand.domain || [-10, 10];
     const domMin = getNumericFieldValue('prop-curve-dom-min', origDomain[0]);
     const domMax = getNumericFieldValue('prop-curve-dom-max', origDomain[1]);
@@ -1681,16 +1633,13 @@ function applyCurveProperties(shape) {
       throw new Error('Interval Min must be strictly less than Interval Max.');
     }
 
-    // 3. Update candidate
     cand.params = newParams;
     cand.domain = [domMin, domMax];
     cand.is_manually_adjusted = true;
 
-    // 4. Regenerate plotted curve samples directly from mathematical equation
     const newPlotPoints = sampleCurvePoints(cand.family, newParams, cand.domain, orientation, 180);
     cand.plot_points = newPlotPoints;
 
-    // 5. Update LaTeX & Plain Text equation strings
     if (typeof formatFittedEquation === 'function') {
       const formatted = formatFittedEquation(cand.family, newParams, cand.domain, orientation);
       cand.latex = formatted.latex;
@@ -1699,13 +1648,11 @@ function applyCurveProperties(shape) {
       cand.text_without_domain = formatted.textWithoutDomain;
     }
 
-    // 6. Recalculate 2D geometric error against original sketch reference
     const strokePts = shape.geometry.points || shape.rawPoints || [];
     const newGeomError = computeCurveGeometricError(strokePts, newPlotPoints);
     cand.geom_error = newGeomError;
     cand.rmse = newGeomError;
 
-    // 7. Refresh UI & Track Analytics
     showPropertySuccess('Parameters applied and curve updated.');
     renderShapePropertiesUI(shape);
     updateEquationsUI();
@@ -1716,18 +1663,12 @@ function applyCurveProperties(shape) {
   }
 }
 
-/**
- * Cancels pending property edits and reverts inputs to stored values.
- */
 function cancelCurveProperties(shape) {
   if (!shape) return;
   renderShapePropertiesUI(shape);
   showPropertySuccess('Changes reverted.');
 }
 
-/**
- * Resets a manually adjusted candidate back to its initial automatic parameters.
- */
 function resetCurveToAuto(shape) {
   if (!shape || !shape.fitData || !shape.fitData.candidates) return;
   const candidates = shape.fitData.candidates;
@@ -1756,9 +1697,6 @@ function resetCurveToAuto(shape) {
   render();
 }
 
-/**
- * Live preview of curve parameters while typing before applying.
- */
 function previewLiveCurveProperties(shape) {
   if (!shape || shape.type !== 'freehand' || !shape.fitData || !shape.fitData.candidates) return;
   const candidates = shape.fitData.candidates;
@@ -1829,21 +1767,19 @@ function previewLiveCurveProperties(shape) {
   } catch (_) {}
 }
 
-/**
- * Candidate selector from Curve Properties panel.
- */
 function selectCandidateFromProperties(shapeId, candidateIdx) {
   const shape = shapes.find(s => s.id === shapeId);
   if (!shape || !shape.fitData || !shape.fitData.candidates) return;
   shape.selectedCandidateIndex = candidateIdx;
+  const cand = shape.fitData.candidates[candidateIdx];
+  if (cand && cand.family) {
+    shape.requestedFamily = cand.family;
+  }
   updateEquationsUI();
   renderShapePropertiesUI(shape);
   render();
 }
 
-/**
- * Main properties panel renderer for both recognised shapes and fitted curves.
- */
 function renderShapePropertiesUI(shape) {
   if (!propertiesBody) return;
 
@@ -1858,7 +1794,6 @@ function renderShapePropertiesUI(shape) {
 
   const { type, geometry } = shape;
 
-  // 1. FREEHAND STROKE / FITTED CURVE
   if (type === 'freehand') {
     if (shape.fitStatus === 'invalidated') {
       propertiesBody.innerHTML = `
@@ -1907,7 +1842,6 @@ function renderShapePropertiesUI(shape) {
       const isManual = !!cand.is_manually_adjusted;
       const errVal = (cand.geom_error !== undefined ? cand.geom_error : cand.rmse) || 0;
 
-      // Ensure original params are backed up on the candidate for "Reset to Auto"
       if (!cand._originalAutoParams) {
         cand._originalAutoParams = {
           params: JSON.parse(JSON.stringify(cand.params || {})),
@@ -2109,7 +2043,6 @@ function renderShapePropertiesUI(shape) {
       return;
     }
 
-    // Freehand stroke not fitted or loading
     const strokePts = shape.geometry.points || [];
     propertiesBody.innerHTML = `
       <div class="properties-form">
@@ -2134,7 +2067,6 @@ function renderShapePropertiesUI(shape) {
     return;
   }
 
-  // 2. RECOGNISED GEOMETRIC SHAPES
   let fieldsHtml = '';
   let infoHtml = '';
 
@@ -2467,9 +2399,6 @@ function renderShapePropertiesUI(shape) {
   });
 }
 
-/**
- * Validates and applies property changes to the selected shape's stored geometry.
- */
 function handleApplyShapeProperties(shape) {
   if (!shape || !shape.geometry) return;
 
@@ -2637,7 +2566,6 @@ function handleApplyShapeProperties(shape) {
       }
     }
 
-    // Update base geometry snapshot for future adjustment handles
     shape.baseGeometry = JSON.parse(JSON.stringify(shape.geometry));
 
     updateEquationsUI();
@@ -2649,18 +2577,11 @@ function handleApplyShapeProperties(shape) {
   }
 }
 
-/**
- * Reverts the properties inputs back to the shape's current stored geometry.
- */
 function handleCancelShapeProperties(shape) {
   if (shape) {
     renderShapePropertiesUI(shape);
   }
 }
-
-// ==========================================
-// 9. HOLD DETECTION & SNAP CONTROLS
-// ==========================================
 
 function cancelHoldTimer() {
   if (holdTimer !== null) {
@@ -2802,7 +2723,7 @@ function updateDebugUI() {
       <strong>Decision:</strong> ${d.selectionReason}
     </div>
     <div style="font-size: 0.75rem; color: #94a3b8;">
-      <strong>Stroke:</strong> ${d.strokeMetrics.pointsCount} points, Length: ${d.strokeMetrics.pathLength}px, Span: ${d.strokeMetrics.diagonal}px | 
+      <strong>Stroke:</strong> ${d.strokeMetrics.pointsCount} points, Length: ${d.strokeMetrics.pathLength}px, Span: ${d.strokeMetrics.diagonal}px |
       <strong>Corners:</strong> ${d.rawCorners.length} raw -> ${d.cleanedCorners.length} cleaned
     </div>
     ${candidatesHtml}
@@ -2813,10 +2734,6 @@ function capitalize(str) {
   if (!str) return '';
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
-
-// ==========================================
-// 10. POINTER EVENT HANDLING
-// ==========================================
 
 function getCanvasPointerPosition(event) {
   const rect = canvas.getBoundingClientRect();
@@ -2875,7 +2792,7 @@ function handlePointerMove(event) {
     }
     render();
   } else if (appState === 'adjustingShape' && snappedShape) {
-    // Jitter protection: do not displace fitted geometry until movement exceeds tolerance
+
     if (!isAdjustingActively && snapAnchor) {
       const distFromSnap = Math.hypot(canvasX - snapAnchor.x, canvasY - snapAnchor.y);
       if (distFromSnap > SNAP_CONFIG.holdTolerancePx) {
@@ -3062,7 +2979,6 @@ function handlePointerUp(event) {
 function handlePointerCancel() {
   cancelHoldTimer();
 
-  // If cancelling during an edit drag, restore original geometry
   if (handleDragStart && selectedShapeId) {
     const selected = shapes.find(s => s.id === selectedShapeId);
     if (selected) {
@@ -3099,10 +3015,6 @@ function handlePointerCancel() {
   updateEquationsUI();
   render();
 }
-
-// ==========================================
-// 11. EDIT MODE INTERACTION (SELECT & TRANSFORM)
-// ==========================================
 
 function handleEditPointerDown(canvasX, canvasY, graphPoint) {
   const selected = shapes.find(s => s.id === selectedShapeId);
@@ -3217,10 +3129,9 @@ function handleEditPointerMove(canvasX, canvasY) {
           y: p.y + dy
         }));
       }
-      // Invalidate in-flight fit requests
+
       currentFitRequestId++;
 
-      // Shift plot points live for visual feedback during dragging
       if (selected.fitData && selected.fitData.candidates && handleDragStart.baseFitData) {
         selected.fitData.candidates.forEach((cand, idx) => {
           const baseCand = handleDragStart.baseFitData.candidates?.[idx];
@@ -3279,7 +3190,7 @@ function handleEditPointerMove(canvasX, canvasY) {
 
 function findHitHandle(shape, canvasX, canvasY) {
   const { type, geometry } = shape;
-  const threshold = 12; // 12 CSS px hit tolerance
+  const threshold = 12;
 
   if (type === 'line') {
     const p1 = graphToCanvas(geometry.p1.x, geometry.p1.y, displayWidth, displayHeight);
@@ -3376,7 +3287,7 @@ function findHitShape(canvasX, canvasY) {
         return s;
       }
     } else if (s.type === 'freehand' && s.geometry.points) {
-      // Check distance to raw sketch stroke
+
       const pts = s.geometry.points;
       for (let j = 0; j < pts.length; j++) {
         const cp = graphToCanvas(pts[j].x, pts[j].y, displayWidth, displayHeight);
@@ -3390,7 +3301,7 @@ function findHitShape(canvasX, canvasY) {
           }
         }
       }
-      // Check distance to fitted curve plot samples
+
       if (s.showFit !== false && s.showOverlay !== false && s.fitData && s.fitData.candidates) {
         const candidateIdx = (s.selectedCandidateIndex >= 0 && s.selectedCandidateIndex < s.fitData.candidates.length)
           ? s.selectedCandidateIndex
@@ -3424,10 +3335,6 @@ function distToSegment(p, a, b) {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
-// ==========================================
-// 12. UI ACTIONS & LISTENERS
-// ==========================================
-
 function updateStrokeCountUI() {
   if (strokeCountDisplay) {
     strokeCountDisplay.textContent = shapes.length.toString();
@@ -3436,7 +3343,7 @@ function updateStrokeCountUI() {
 
 function handleClear() {
   cancelHoldTimer();
-  currentFitRequestId++; // Cancel any in-flight fit requests
+  currentFitRequestId++;
   if (activePointerId !== null && canvas.hasPointerCapture(activePointerId)) {
     try {
       canvas.releasePointerCapture(activePointerId);
@@ -3597,7 +3504,6 @@ function deleteShape(shapeId) {
   render();
 }
 
-// Zoom & Viewport Controls
 const zoomInBtn = document.getElementById('zoom-in-btn');
 const zoomOutBtn = document.getElementById('zoom-out-btn');
 const zoomResetBtn = document.getElementById('zoom-reset-btn');
@@ -3639,7 +3545,6 @@ if (zoomInBtn) zoomInBtn.addEventListener('click', handleZoomIn);
 if (zoomOutBtn) zoomOutBtn.addEventListener('click', handleZoomOut);
 if (zoomResetBtn) zoomResetBtn.addEventListener('click', handleZoomReset);
 
-// Sidebar Collapse & Expand
 const sidebar = document.getElementById('sidebar');
 const sidebarCollapseBtn = document.getElementById('sidebar-collapse-btn');
 const sidebarExpandBtn = document.getElementById('sidebar-expand-btn');
@@ -3660,7 +3565,6 @@ if (sidebarExpandBtn && sidebar) {
   });
 }
 
-// Sidebar Resizer Dragging
 const sidebarResizer = document.getElementById('sidebar-resizer');
 if (sidebarResizer && sidebar) {
   let isResizingSidebar = false;
@@ -3698,7 +3602,6 @@ if (sidebarResizer && sidebar) {
   sidebarResizer.addEventListener('pointercancel', stopResizing);
 }
 
-// Mobile Tab Switcher
 const mobileTabGraph = document.getElementById('mobile-tab-graph');
 const mobileTabSidebar = document.getElementById('mobile-tab-sidebar');
 
@@ -3717,7 +3620,6 @@ if (mobileTabGraph && mobileTabSidebar && sidebar) {
   });
 }
 
-// Keyboard shortcuts (Delete selected shape in Edit mode)
 window.addEventListener('keydown', (e) => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShapeId !== null) {
     const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
@@ -3727,7 +3629,6 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// Button Listeners
 modeDrawBtn.addEventListener('click', () => setToolMode('draw'));
 modeEditBtn.addEventListener('click', () => setToolMode('edit'));
 debugToggleBtn.addEventListener('click', toggleDebugPanel);
@@ -3737,28 +3638,25 @@ if (debugCopyBtn) debugCopyBtn.addEventListener('click', handleCopyStrokeJSON);
 if (debugReplayToggleBtn) debugReplayToggleBtn.addEventListener('click', handleToggleReplayBox);
 if (debugRunReplayBtn) debugRunReplayBtn.addEventListener('click', handleRunReplay);
 
-// Pointer Listeners
 canvas.addEventListener('pointerdown', handlePointerDown);
 canvas.addEventListener('pointermove', handlePointerMove);
 canvas.addEventListener('pointerup', handlePointerUp);
 canvas.addEventListener('pointercancel', handlePointerCancel);
 canvas.addEventListener('lostpointercapture', handlePointerCancel);
 
-// Window & Container Resize
 window.addEventListener('resize', resizeCanvas);
 const resizeObserver = new ResizeObserver(() => {
   resizeCanvas();
 });
 resizeObserver.observe(canvas.parentElement);
 
-// Ensure KaTeX equations render if script loaded asynchronously
 window.addEventListener('load', () => {
   updateEquationsUI();
 });
 
-// Initial setup
 resizeCanvas();
 updateStatusUI('idle');
 updateDebugUI();
 updateEquationsUI();
 renderShapePropertiesUI(null);
+

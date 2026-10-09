@@ -1,19 +1,3 @@
-/**
- * Reverse Desmos - Milestone 3: Mathematical Equation Generation Engine
- * 
- * Derives exact mathematical equations from recognized shape geometry in graph coordinates:
- * - Line segments (slope-intercept y = mx + b with domain, or x = c with range)
- * - Circles (implicit standard form (x - h)² + (y - k)² = r²)
- * - Ellipses (axis-aligned (x-h)²/a² + (y-k)²/b² = 1, and rotated u²/a² + v²/b² = 1 with u, v definitions)
- * - Rectangles, squares, triangles, regular polygons (5-8 sides), and stars (piecewise restricted boundary edge equations)
- */
-
-/**
- * Formats a number cleanly for mathematical display:
- * - Removes negative zero (-0 -> 0)
- * - Rounds to specified decimals (default 2)
- * - Drops trailing zeros after decimal point
- */
 function formatNum(num, decimals = 2) {
   if (num === null || num === undefined || isNaN(num)) return '0';
   if (Math.abs(num) < 1e-6) return '0';
@@ -22,12 +6,6 @@ function formatNum(num, decimals = 2) {
   return rounded.toString();
 }
 
-/**
- * Formats (x - h) expression for LaTeX and plain text:
- * h = 0 -> "x"
- * h > 0 -> "(x - h)"
- * h < 0 -> "(x + |h|)"
- */
 function formatShiftedVar(varName, offset, decimals = 2) {
   if (offset === null || offset === undefined || isNaN(offset) || Math.abs(offset) < 1e-6) {
     return { latex: varName, text: varName, isZero: true };
@@ -51,11 +29,6 @@ function formatShiftedVar(varName, offset, decimals = 2) {
   }
 }
 
-/**
- * Formats (x - h)² expression:
- * h = 0 -> "x^2"
- * h != 0 -> "(x - h)^2"
- */
 function formatSquaredTerm(varName, offset, decimals = 2) {
   const shifted = formatShiftedVar(varName, offset, decimals);
   if (shifted.isZero) {
@@ -70,16 +43,11 @@ function formatSquaredTerm(varName, offset, decimals = 2) {
   };
 }
 
-/**
- * 1. LINE SEGMENT EQUATION
- * Derives y = mx + b with domain restriction, or x = c with range restriction.
- */
 function deriveLineSegmentEquation(p1, p2, decimals = 2) {
   const dx = p2.x - p1.x;
   const dy = p2.y - p1.y;
   const len = Math.hypot(dx, dy);
 
-  // 1. Single Point (zero-length line)
   if (len < 1e-4) {
     const xStr = formatNum(p1.x, decimals);
     const yStr = formatNum(p1.y, decimals);
@@ -92,7 +60,6 @@ function deriveLineSegmentEquation(p1, p2, decimals = 2) {
     };
   }
 
-  // 2. Vertical Line (x = c)
   if (Math.abs(dx) < 1e-4) {
     const cVal = (p1.x + p2.x) / 2;
     const cStr = formatNum(cVal, decimals);
@@ -111,7 +78,6 @@ function deriveLineSegmentEquation(p1, p2, decimals = 2) {
     };
   }
 
-  // 3. Non-Vertical Line (y = mx + b)
   const m = dy / dx;
   const b = p1.y - m * p1.x;
   const xMin = Math.min(p1.x, p2.x);
@@ -119,7 +85,6 @@ function deriveLineSegmentEquation(p1, p2, decimals = 2) {
   const xMinStr = formatNum(xMin, decimals);
   const xMaxStr = formatNum(xMax, decimals);
 
-  // Horizontal Line (y = b)
   if (Math.abs(m) < 1e-4) {
     const bStr = formatNum(b, decimals);
     return {
@@ -133,7 +98,6 @@ function deriveLineSegmentEquation(p1, p2, decimals = 2) {
     };
   }
 
-  // General slope-intercept line
   let mStr = '';
   if (Math.abs(m - 1) < 1e-4) {
     mStr = 'x';
@@ -167,10 +131,6 @@ function deriveLineSegmentEquation(p1, p2, decimals = 2) {
   };
 }
 
-/**
- * 2. CIRCLE EQUATION
- * Derives (x - h)² + (y - k)² = r².
- */
 function deriveCircleEquation(center, radius, decimals = 2) {
   const h = center.x;
   const k = center.y;
@@ -196,10 +156,6 @@ function deriveCircleEquation(center, radius, decimals = 2) {
   };
 }
 
-/**
- * 3. ELLIPSE EQUATION
- * Handles both Axis-Aligned and Rotated Ellipses with coordinate transformations.
- */
 function deriveEllipseEquation(center, radiusX, radiusY, canvasRotation = 0, decimals = 2) {
   const h = center.x;
   const k = center.y;
@@ -208,10 +164,7 @@ function deriveEllipseEquation(center, radiusX, radiusY, canvasRotation = 0, dec
   const a2 = a * a;
   const b2 = b * b;
 
-  // In standard mathematical graph coordinates (y upwards),
-  // a clockwise canvas rotation theta_canvas corresponds to theta_graph = -theta_canvas.
   let graphRot = -canvasRotation;
-  // Normalize angle to (-pi/2, pi/2]
   while (graphRot > Math.PI / 2) graphRot -= Math.PI;
   while (graphRot <= -Math.PI / 2) graphRot += Math.PI;
 
@@ -222,7 +175,6 @@ function deriveEllipseEquation(center, radiusX, radiusY, canvasRotation = 0, dec
   const hStr = formatNum(h, decimals);
   const kStr = formatNum(k, decimals);
 
-  // 1. Axis-Aligned Ellipse (|theta| < 0.5 degrees / 0.0087 rad)
   if (Math.abs(graphRot) < 0.0087) {
     const termX = formatSquaredTerm('x', h, decimals);
     const termY = formatSquaredTerm('y', k, decimals);
@@ -241,7 +193,6 @@ function deriveEllipseEquation(center, radiusX, radiusY, canvasRotation = 0, dec
     };
   }
 
-  // 2. Rotated Ellipse
   const rotDeg = graphRot * 180 / Math.PI;
   const rotDegStr = formatNum(rotDeg, 1);
   const cosT = Math.cos(graphRot);
@@ -252,8 +203,6 @@ function deriveEllipseEquation(center, radiusX, radiusY, canvasRotation = 0, dec
   const shiftedX = formatShiftedVar('x', h, decimals);
   const shiftedY = formatShiftedVar('y', k, decimals);
 
-  // u = (x - h) cos θ + (y - k) sin θ
-  // v = -(x - h) sin θ + (y - k) cos θ
   let uDefLatex = `u = ${cosTStr}${shiftedX.latex}`;
   if (sinT >= 0) uDefLatex += ` + ${sinTStr}${shiftedY.latex}`;
   else uDefLatex += ` - ${formatNum(Math.abs(sinT), 3)}${shiftedY.latex}`;
@@ -286,10 +235,6 @@ function deriveEllipseEquation(center, radiusX, radiusY, canvasRotation = 0, dec
   };
 }
 
-/**
- * 4. EXTRACT ORDERED VERTICES FROM SHAPE GEOMETRY
- * Obtains the exact list of vertices used for rendering the shape boundary.
- */
 function getShapeOrderedVertices(shape) {
   const { type, geometry } = shape;
   if (!geometry) return [];
@@ -307,14 +252,12 @@ function getShapeOrderedVertices(shape) {
       const { center, width, height, rotation = 0 } = geometry;
       if (!center || width === undefined || height === undefined) return [];
 
-      // Canvas rotation theta_c -> graph rotation theta_g = -theta_c
       const theta = -rotation;
       const cosT = Math.cos(theta);
       const sinT = Math.sin(theta);
       const hw = width / 2;
       const hh = height / 2;
 
-      // 4 corners ordered counter-clockwise in graph frame
       return [
         { x: center.x + hw * cosT - hh * sinT, y: center.y + hw * sinT + hh * cosT },
         { x: center.x - hw * cosT - hh * sinT, y: center.y - hw * sinT + hh * cosT },
@@ -362,10 +305,6 @@ function getShapeOrderedVertices(shape) {
   }
 }
 
-/**
- * 5. POLYGON / CLOSED SHAPE BOUNDARY EQUATIONS
- * Generates restricted edge equations for all boundary segments.
- */
 function derivePolygonBoundaryEquations(shape, decimals = 2) {
   const vertices = getShapeOrderedVertices(shape);
   if (!vertices || vertices.length < 3) return null;
@@ -407,9 +346,6 @@ function derivePolygonBoundaryEquations(shape, decimals = 2) {
   };
 }
 
-/**
- * Formats independent variable domain restriction: {u_min <= u <= u_max}
- */
 function formatFittedDomain(domain, indepVar = 'x', decimals = 2) {
   if (!domain || domain.length < 2) {
     return { latex: '', text: '' };
@@ -422,9 +358,6 @@ function formatFittedDomain(domain, indepVar = 'x', decimals = 2) {
   };
 }
 
-/**
- * Formats linear equation: y = mx + b or x = my + b
- */
 function formatLinearFittedEquation(m, b, domain, orientation = 'y_of_x', decimals = 2) {
   const depVar = orientation === 'y_of_x' ? 'y' : 'x';
   const indepVar = orientation === 'y_of_x' ? 'x' : 'y';
@@ -465,9 +398,6 @@ function formatLinearFittedEquation(m, b, domain, orientation = 'y_of_x', decima
   };
 }
 
-/**
- * Formats quadratic equation: y = ax² + bx + c
- */
 function formatQuadraticFittedEquation(a, b, c, domain, orientation = 'y_of_x', decimals = 2) {
   const depVar = orientation === 'y_of_x' ? 'y' : 'x';
   const indepVar = orientation === 'y_of_x' ? 'x' : 'y';
@@ -520,9 +450,6 @@ function formatQuadraticFittedEquation(a, b, c, domain, orientation = 'y_of_x', 
   };
 }
 
-/**
- * Formats cubic equation: y = ax³ + bx² + cx + d
- */
 function formatCubicFittedEquation(a, b, c, d, domain, orientation = 'y_of_x', decimals = 2) {
   const depVar = orientation === 'y_of_x' ? 'y' : 'x';
   const indepVar = orientation === 'y_of_x' ? 'x' : 'y';
@@ -587,9 +514,6 @@ function formatCubicFittedEquation(a, b, c, d, domain, orientation = 'y_of_x', d
   };
 }
 
-/**
- * Formats absolute value equation: y = a|x - h| + k
- */
 function formatAbsFittedEquation(a, h, k, domain, orientation = 'y_of_x', decimals = 2) {
   const depVar = orientation === 'y_of_x' ? 'y' : 'x';
   const indepVar = orientation === 'y_of_x' ? 'x' : 'y';
@@ -627,9 +551,6 @@ function formatAbsFittedEquation(a, h, k, domain, orientation = 'y_of_x', decima
   };
 }
 
-/**
- * Formats sine wave equation: y = A sin(Bx + C) + D
- */
 function formatSineFittedEquation(A, B, C, D, domain, orientation = 'y_of_x', decimals = 2) {
   const depVar = orientation === 'y_of_x' ? 'y' : 'x';
   const indepVar = orientation === 'y_of_x' ? 'x' : 'y';
@@ -681,9 +602,6 @@ function formatSineFittedEquation(A, B, C, D, domain, orientation = 'y_of_x', de
   };
 }
 
-/**
- * General fitted equation dispatcher
- */
 function formatFittedEquation(family, params, domain, orientation = 'y_of_x', decimals = 2) {
   const fam = (family || 'linear').toLowerCase().replace(/\s+/g, '_');
   switch (fam) {
@@ -702,10 +620,6 @@ function formatFittedEquation(family, params, domain, orientation = 'y_of_x', de
   }
 }
 
-/**
- * MASTER EQUATION DERIVATION FUNCTION
- * Derives the complete mathematical description for any recognized shape.
- */
 function deriveShapeEquations(shape, decimals = 2) {
   if (!shape || !shape.geometry) return null;
 
@@ -857,5 +771,3 @@ if (typeof module !== 'undefined' && module.exports) {
     formatFittedEquation
   };
 }
-
-

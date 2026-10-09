@@ -8,11 +8,9 @@ from fitting import fit_all_families
 
 app = FastAPI(
     title="Somsed - Curve Fitting API",
-    description="Backend API for mathematical equation curve fitting on freehand graph strokes",
     version="1.1.0"
 )
 
-# Configure CORS for local development and production deployment
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "*")
 if allowed_origins_env == "*":
     origins = ["*"]
@@ -33,14 +31,6 @@ def health_check():
 
 @app.post("/fit", response_model=FitResponse)
 def fit_stroke_curve(req: FitRequest):
-    """
-    Fits a freehand graph stroke across supported orientations and mathematical curve families:
-    - Linear: y = mx + b  or  x = my + b
-    - Quadratic: y = ax^2 + bx + c  or  x = ay^2 + by + c
-    - Cubic: y = ax^3 + bx^2 + cx + d  or  x = ay^3 + by^2 + cy + d
-    - Absolute Value: y = a|x - h| + k  or  x = a|y - h| + k
-    - Sine: y = A sin(Bx + C) + D  or  x = A sin(By + C) + D
-    """
     if len(req.points) < 4:
         return FitResponse(
             success=False,
@@ -50,7 +40,6 @@ def fit_stroke_curve(req: FitRequest):
             message="Stroke has too few points (minimum 4 points required)."
         )
 
-    # 1. Preprocess and validate single-valuedness in both orientations
     ok, resampled_pts, valid_orientations, is_parametric_needed, err_msg = preprocess_stroke(req.points)
     if not ok or resampled_pts is None or not valid_orientations:
         return FitResponse(
@@ -61,7 +50,6 @@ def fit_stroke_curve(req: FitRequest):
             message=err_msg or "This curve needs parametric fitting, which is not supported yet."
         )
 
-    # 2. Fit supported families across valid orientations and rank using 2D geometric error
     families = req.families or req.allowed_families
     success, candidates, fit_err_msg, timings = fit_all_families(resampled_pts, valid_orientations, families)
     if not success or not candidates:

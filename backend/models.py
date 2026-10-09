@@ -6,10 +6,10 @@ class Point(BaseModel):
     y: float
 
 class FitRequest(BaseModel):
-    points: List[Point] = Field(..., min_length=3, description="List of graph coordinate points from the freehand stroke")
-    stroke_id: Optional[Union[str, int]] = Field(None, description="Optional stroke identifier for stale request tracking")
-    families: Optional[List[str]] = Field(None, description="Optional list of supported families to fit")
-    allowed_families: Optional[List[str]] = Field(None, description="Alias for families")
+    points: List[Point] = Field(..., min_length=3)
+    stroke_id: Optional[Union[str, int]] = None
+    families: Optional[List[str]] = None
+    allowed_families: Optional[List[str]] = None
 
 class FitCandidate(BaseModel):
     family: str
@@ -18,7 +18,7 @@ class FitCandidate(BaseModel):
     latex: str
     text: str
     domain: List[float]
-    orientation: str = "y_of_x"  # "y_of_x" | "x_of_y"
+    orientation: str = "y_of_x"
     rmse: float
     r_squared: float
     geom_error: float
@@ -31,7 +31,7 @@ class FitResponse(BaseModel):
     success: bool
     stroke_id: Optional[Union[str, int]] = None
     domain: Optional[List[float]] = None
-    orientation: str = "y_of_x"  # "y_of_x" | "x_of_y"
+    orientation: str = "y_of_x"
     best_family: Optional[str] = None
     candidates: List[FitCandidate] = []
     rejection_reason: Optional[str] = None
