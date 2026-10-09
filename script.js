@@ -17,11 +17,31 @@
 // ==========================================
 const DOMAIN = { min: -10, max: 10 };
 const RANGE = { min: -10, max: 10 };
+let zoomScale = 1.0;
 
 const SNAP_CONFIG = {
   holdDurationMs: 600,       // Duration pointer must pause to trigger recognition (ms)
   holdTolerancePx: 5         // Movement jitter radius allowed while holding still (CSS pixels)
 };
+
+// Desmos Palette with Green as Primary Accent (#2d9238)
+const DESMOS_PALETTE = [
+  '#2d9238', // Desmos green (Primary theme accent)
+  '#2d70b3', // Desmos blue
+  '#fa7e19', // Desmos orange
+  '#d62728', // Desmos red
+  '#6042a6', // Desmos purple
+  '#1e293b', // Dark slate
+  '#0d9488', // Teal
+  '#c026d3', // Fuchsia
+  '#475569'  // Slate
+];
+
+function getShapeColor(shape, index) {
+  if (shape && shape.color) return shape.color;
+  const idx = (typeof index === 'number') ? index : (shapes.indexOf(shape) !== -1 ? shapes.indexOf(shape) : shapes.length);
+  return DESMOS_PALETTE[Math.abs(idx) % DESMOS_PALETTE.length];
+}
 
 const STYLES = {
   gridBackground: '#ffffff',
@@ -29,13 +49,13 @@ const STYLES = {
   gridLineBold: '#cbd5e1',      // Medium grey for 5-unit increments
   axisLine: '#334155',          // Dark slate for major X & Y axes (x=0, y=0)
   axisText: '#64748b',          // Coordinate labels
-  strokeColor: '#2563eb',       // Royal blue for freehand strokes and shapes
-  snapPreviewColor: '#0284c7',  // Vibrant cyan for live snapped shape preview
-  selectedColor: '#7c3aed',     // Purple outline for selected shapes in Edit mode
-  handleColor: '#0ea5e9',       // Cyan-blue for adjustment & transform handles
-  centerDotColor: '#e11d48',    // Rose dot for center of closed shapes
+  strokeColor: '#2d9238',       // Green default stroke
+  snapPreviewColor: '#2d9238',  // Green live snapped shape preview
+  selectedColor: '#2d9238',     // Green outline for selected shapes in Edit mode
+  handleColor: '#2d9238',       // Green for adjustment & transform handles
+  centerDotColor: '#dc2626',    // Red dot for center of closed shapes
   debugCornerColor: '#f59e0b',  // Amber dot for detected corners in debug mode
-  strokeWidth: 3,               // Base stroke width in CSS pixels
+  strokeWidth: 2.5,             // Base stroke width in CSS pixels
   fontFamily: 'Inter, system-ui, sans-serif'
 };
 
@@ -102,8 +122,20 @@ const propertiesShapeBadge = document.getElementById('properties-shape-badge');
 const propertiesBody = document.getElementById('properties-body');
 
 // ==========================================
-// 4. COORDINATE CONVERSION FUNCTIONS
+// 4. AUTHORITATIVE COORDINATE CONVERSION & VIEWPORT TRANSFORMS
 // ==========================================
+
+function getPixelsPerUnit() {
+  return displayWidth / (DOMAIN.max - DOMAIN.min);
+}
+
+function graphToCanvasDist(graphDist) {
+  return graphDist * (displayWidth / (DOMAIN.max - DOMAIN.min));
+}
+
+function canvasToGraphDist(canvasDist) {
+  return canvasDist * ((DOMAIN.max - DOMAIN.min) / displayWidth);
+}
 
 function canvasToGraph(canvasX, canvasY, width, height) {
   const normX = canvasX / width;
@@ -121,12 +153,24 @@ function graphToCanvas(graphX, graphY, width, height) {
   return { x: canvasX, y: canvasY };
 }
 
+function updateStatsDisplay() {
+  const domainEl = document.getElementById('domain-display');
+  if (domainEl) {
+    domainEl.innerHTML = `Domain: <strong>[${DOMAIN.min.toFixed(1)}, ${DOMAIN.max.toFixed(1)}]</strong>`;
+  }
+  if (strokeCountDisplay) {
+    strokeCountDisplay.textContent = shapes.length.toString();
+  }
+}
+
 // ==========================================
-// 5. CANVAS SIZING & HIGH-DPI SUPPORT
+// 5. CANVAS SIZING & HIGH-DPI ISOTROPIC SUPPORT
 // ==========================================
 
 function resizeCanvas() {
-  const rect = canvas.getBoundingClientRect();
+  const container = canvas.parentElement;
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
   if (rect.width === 0 || rect.height === 0) return;
 
   cancelHoldTimer();
@@ -141,6 +185,30 @@ function resizeCanvas() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
 
+  // Equal scaling / isotropic aspect-ratio:
+  // Preserves [-10, 10] (base span 20 / zoomScale) along the shorter dimension
+  const baseSpan = 20 / (zoomScale || 1.0);
+  if (displayWidth >= displayHeight) {
+    // Width is greater: height spans baseSpan (-baseSpan/2 to +baseSpan/2)
+    const pxPerUnit = displayHeight / baseSpan;
+    const xSpan = displayWidth / pxPerUnit;
+    const halfX = xSpan / 2;
+    DOMAIN.min = -halfX;
+    DOMAIN.max = halfX;
+    RANGE.min = -baseSpan / 2;
+    RANGE.max = baseSpan / 2;
+  } else {
+    // Height is greater: width spans baseSpan (-baseSpan/2 to +baseSpan/2)
+    const pxPerUnit = displayWidth / baseSpan;
+    const ySpan = displayHeight / pxPerUnit;
+    const halfY = ySpan / 2;
+    DOMAIN.min = -baseSpan / 2;
+    DOMAIN.max = baseSpan / 2;
+    RANGE.min = -halfY;
+    RANGE.max = halfY;
+  }
+
+  updateStatsDisplay();
   render();
 }
 
@@ -152,8 +220,13 @@ function drawGrid(ctx, width, height) {
   ctx.fillStyle = STYLES.gridBackground;
   ctx.fillRect(0, 0, width, height);
 
-  // Vertical grid lines
-  for (let x = DOMAIN.min; x <= DOMAIN.max; x++) {
+  const xStart = Math.ceil(DOMAIN.min);
+  const xEnd = Math.floor(DOMAIN.max);
+  const yStart = Math.ceil(RANGE.min);
+  const yEnd = Math.floor(RANGE.max);
+
+  // Vertical grid lines (1-unit and 5-unit increments)
+  for (let x = xStart; x <= xEnd; x++) {
     const { x: cx } = graphToCanvas(x, 0, width, height);
     if (x === 0) continue;
     ctx.beginPath();
@@ -164,8 +237,8 @@ function drawGrid(ctx, width, height) {
     ctx.stroke();
   }
 
-  // Horizontal grid lines
-  for (let y = RANGE.min; y <= RANGE.max; y++) {
+  // Horizontal grid lines (1-unit and 5-unit increments)
+  for (let y = yStart; y <= yEnd; y++) {
     const { y: cy } = graphToCanvas(0, y, width, height);
     if (y === 0) continue;
     ctx.beginPath();
@@ -176,62 +249,76 @@ function drawGrid(ctx, width, height) {
     ctx.stroke();
   }
 
-  // Major Axes
+  // Major Axes (x=0, y=0)
   const origin = graphToCanvas(0, 0, width, height);
   ctx.strokeStyle = STYLES.axisLine;
   ctx.lineWidth = 2;
 
-  ctx.beginPath();
-  ctx.moveTo(0, origin.y);
-  ctx.lineTo(width, origin.y);
-  ctx.stroke();
+  if (origin.y >= 0 && origin.y <= height) {
+    ctx.beginPath();
+    ctx.moveTo(0, origin.y);
+    ctx.lineTo(width, origin.y);
+    ctx.stroke();
+  }
 
-  ctx.beginPath();
-  ctx.moveTo(origin.x, 0);
-  ctx.lineTo(origin.x, height);
-  ctx.stroke();
+  if (origin.x >= 0 && origin.x <= width) {
+    ctx.beginPath();
+    ctx.moveTo(origin.x, 0);
+    ctx.lineTo(origin.x, height);
+    ctx.stroke();
+  }
 
-  // Ticks & Labels
+  // Ticks & Coordinate Numbers
   ctx.fillStyle = STYLES.axisText;
   ctx.font = `11px ${STYLES.fontFamily}`;
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  for (let x = DOMAIN.min; x <= DOMAIN.max; x += 2) {
+  const tickXStart = Math.ceil(DOMAIN.min / 2) * 2;
+  const tickXEnd = Math.floor(DOMAIN.max / 2) * 2;
+  const clampedOriginY = Math.max(14, Math.min(height - 24, origin.y));
+
+  for (let x = tickXStart; x <= tickXEnd; x += 2) {
     if (x === 0) continue;
     const pos = graphToCanvas(x, 0, width, height);
     ctx.beginPath();
-    ctx.moveTo(pos.x, origin.y - 3);
-    ctx.lineTo(pos.x, origin.y + 3);
+    ctx.moveTo(pos.x, clampedOriginY - 3);
+    ctx.lineTo(pos.x, clampedOriginY + 3);
     ctx.stroke();
-    ctx.fillText(x.toString(), pos.x, origin.y + 6);
+    ctx.fillText(x.toString(), pos.x, clampedOriginY + 5);
   }
 
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  for (let y = RANGE.min; y <= RANGE.max; y += 2) {
+  const tickYStart = Math.ceil(RANGE.min / 2) * 2;
+  const tickYEnd = Math.floor(RANGE.max / 2) * 2;
+  const clampedOriginX = Math.max(24, Math.min(width - 14, origin.x));
+
+  for (let y = tickYStart; y <= tickYEnd; y += 2) {
     if (y === 0) continue;
     const pos = graphToCanvas(0, y, width, height);
     ctx.beginPath();
-    ctx.moveTo(origin.x - 3, pos.y);
-    ctx.lineTo(origin.x + 3, pos.y);
+    ctx.moveTo(clampedOriginX - 3, pos.y);
+    ctx.lineTo(clampedOriginX + 3, pos.y);
     ctx.stroke();
-    ctx.fillText(y.toString(), origin.x - 6, pos.y);
+    ctx.fillText(y.toString(), clampedOriginX - 5, pos.y);
   }
 
+  // Axes Labels
   ctx.font = `bold 12px ${STYLES.fontFamily}`;
   ctx.fillStyle = STYLES.axisLine;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('x', width - 8, origin.y - 6);
+  ctx.fillText('x', width - 8, clampedOriginY - 6);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText('y', origin.x + 8, 8);
+  ctx.fillText('y', clampedOriginX + 8, 8);
 }
 
 function drawShape(ctx, shape, isSelected = false, customColor = null) {
   const { type, geometry } = shape;
-  const color = isSelected ? STYLES.selectedColor : (customColor || STYLES.strokeColor);
+  const shapeColor = customColor || shape.color || getShapeColor(shape);
+  const color = isSelected ? STYLES.selectedColor : shapeColor;
 
   ctx.save();
   ctx.strokeStyle = color;
@@ -266,7 +353,8 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
         const candidateIndex = (shape.selectedCandidateIndex >= 0 && shape.selectedCandidateIndex < candidates.length)
           ? shape.selectedCandidateIndex
           : 0;
-        const samples = cand.plot_points || cand.plotting_samples || [];
+        const cand = candidates[candidateIndex];
+        const samples = cand ? (cand.plot_points || cand.plotting_samples || []) : [];
         if (cand && samples.length > 1) {
           ctx.save();
           ctx.strokeStyle = '#10b981';
@@ -310,7 +398,7 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
 
     case 'circle': {
       const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
-      const r = (geometry.radius / 20) * displayWidth;
+      const r = graphToCanvasDist(geometry.radius);
       ctx.beginPath();
       ctx.arc(c.x, c.y, Math.max(0.5, r), 0, Math.PI * 2);
       ctx.stroke();
@@ -319,8 +407,8 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
 
     case 'ellipse': {
       const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
-      const rx = (geometry.radiusX / 20) * displayWidth;
-      const ry = (geometry.radiusY / 20) * displayHeight;
+      const rx = graphToCanvasDist(geometry.radiusX);
+      const ry = graphToCanvasDist(geometry.radiusY);
       ctx.beginPath();
       ctx.ellipse(c.x, c.y, Math.max(0.5, rx), Math.max(0.5, ry), geometry.rotation || 0, 0, Math.PI * 2);
       ctx.stroke();
@@ -330,8 +418,8 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
     case 'rectangle':
     case 'square': {
       const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
-      const w = (geometry.width / 20) * displayWidth;
-      const h = (geometry.height / 20) * displayHeight;
+      const w = graphToCanvasDist(geometry.width);
+      const h = graphToCanvasDist(geometry.height);
       ctx.translate(c.x, c.y);
       ctx.rotate(geometry.rotation || 0);
       ctx.strokeRect(-w / 2, -h / 2, w, h);
@@ -353,7 +441,7 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
 
     case 'polygon': {
       const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
-      const r = (geometry.radius / 20) * displayWidth;
+      const r = graphToCanvasDist(geometry.radius);
       const sides = geometry.sides || 5;
       const rot = geometry.rotation || 0;
 
@@ -372,8 +460,8 @@ function drawShape(ctx, shape, isSelected = false, customColor = null) {
 
     case 'star': {
       const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
-      const r1 = (geometry.outerRadius / 20) * displayWidth;
-      const r2 = (geometry.innerRadius / 20) * displayWidth;
+      const r1 = graphToCanvasDist(geometry.outerRadius);
+      const r2 = graphToCanvasDist(geometry.innerRadius);
       const rot = geometry.rotation || 0;
 
       ctx.beginPath();
@@ -442,15 +530,15 @@ function drawShapeHandles(ctx, shape) {
 
     let handlePos = null;
     if (type === 'circle') {
-      const r = (geometry.radius / 20) * displayWidth;
+      const r = graphToCanvasDist(geometry.radius);
       handlePos = { x: c.x + r, y: c.y };
     } else if (type === 'ellipse') {
-      const rx = (geometry.radiusX / 20) * displayWidth;
+      const rx = graphToCanvasDist(geometry.radiusX);
       const rot = geometry.rotation || 0;
       handlePos = { x: c.x + rx * Math.cos(rot), y: c.y + rx * Math.sin(rot) };
     } else if (type === 'rectangle' || type === 'square') {
-      const w = (geometry.width / 20) * displayWidth;
-      const h = (geometry.height / 20) * displayHeight;
+      const w = graphToCanvasDist(geometry.width);
+      const h = graphToCanvasDist(geometry.height);
       const rot = geometry.rotation || 0;
       const cornerX = w / 2, cornerY = h / 2;
       handlePos = {
@@ -458,7 +546,7 @@ function drawShapeHandles(ctx, shape) {
         y: c.y + (cornerX * Math.sin(rot) + cornerY * Math.cos(rot))
       };
     } else if (type === 'polygon' || type === 'star') {
-      const r = ((geometry.radius || geometry.outerRadius) / 20) * displayWidth;
+      const r = graphToCanvasDist(geometry.radius || geometry.outerRadius);
       const rot = geometry.rotation || 0;
       handlePos = { x: c.x + r * Math.cos(rot), y: c.y + r * Math.sin(rot) };
     }
@@ -498,7 +586,7 @@ function getShapeLabelPosition(shape) {
     }
     case 'circle': {
       const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
-      const r = (geometry.radius / 20) * displayWidth;
+      const r = graphToCanvasDist(geometry.radius);
       anchorCanvas = {
         x: c.x,
         y: c.y - r - 12
@@ -507,7 +595,7 @@ function getShapeLabelPosition(shape) {
     }
     case 'ellipse': {
       const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
-      const maxR = (Math.max(geometry.radiusX || 1, geometry.radiusY || 1) / 20) * Math.max(displayWidth, displayHeight);
+      const maxR = graphToCanvasDist(Math.max(geometry.radiusX || 1, geometry.radiusY || 1));
       anchorCanvas = {
         x: c.x,
         y: c.y - maxR - 12
@@ -517,7 +605,7 @@ function getShapeLabelPosition(shape) {
     case 'rectangle':
     case 'square': {
       const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
-      const diag = (Math.hypot(geometry.width || 1, geometry.height || 1) / 2 / 20) * displayWidth;
+      const diag = graphToCanvasDist(Math.hypot(geometry.width || 1, geometry.height || 1) / 2);
       anchorCanvas = {
         x: c.x,
         y: c.y - diag - 12
@@ -540,7 +628,7 @@ function getShapeLabelPosition(shape) {
     case 'polygon':
     case 'star': {
       const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
-      const r = ((geometry.radius || geometry.outerRadius || 2) / 20) * displayWidth;
+      const r = graphToCanvasDist(geometry.radius || geometry.outerRadius || 2);
       anchorCanvas = {
         x: c.x,
         y: c.y - r - 12
@@ -745,13 +833,31 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
   card.className = `equation-item ${isSelected ? 'is-selected' : ''}`;
   card.dataset.shapeId = shape.id;
 
+  const shapeIdx = shapes.findIndex(s => s.id === shape.id);
+  const shapeColor = getShapeColor(shape, shapeIdx);
+  card.style.borderLeftColor = shapeColor;
+
   // Header
   const header = document.createElement('div');
   header.className = 'equation-item-header';
 
   const titleTag = document.createElement('div');
   titleTag.className = 'equation-shape-tag';
-  titleTag.innerHTML = `<span class="equation-shape-icon">${getShapeIcon(shape.type)}</span><span>${eqData.title}</span>`;
+
+  const numPill = document.createElement('span');
+  numPill.className = 'expression-num-pill';
+  numPill.style.backgroundColor = shapeColor;
+  numPill.textContent = (shapeIdx !== -1 ? (shapeIdx + 1) : '#').toString();
+  titleTag.appendChild(numPill);
+
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'equation-shape-icon';
+  iconSpan.textContent = getShapeIcon(shape.type);
+  titleTag.appendChild(iconSpan);
+
+  const titleSpan = document.createElement('span');
+  titleSpan.textContent = eqData.title;
+  titleTag.appendChild(titleSpan);
 
   if (eqData.isSideways) {
     const orientBadge = document.createElement('span');
@@ -764,19 +870,19 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
     const previewBadge = document.createElement('span');
     previewBadge.className = 'badge';
     previewBadge.style.fontSize = '0.65rem';
-    previewBadge.style.backgroundColor = 'rgba(2, 132, 199, 0.2)';
-    previewBadge.style.color = '#38bdf8';
+    previewBadge.style.backgroundColor = 'var(--accent-light)';
+    previewBadge.style.color = 'var(--accent-primary)';
     previewBadge.style.marginLeft = '0.4rem';
     previewBadge.textContent = 'Previewing...';
     titleTag.appendChild(previewBadge);
   }
   header.appendChild(titleTag);
 
-  // Copy Actions
-  if (!eqData.isFreehand || eqData.isFitted) {
-    const actions = document.createElement('div');
-    actions.className = 'equation-actions';
+  // Actions (Copy & Delete)
+  const actions = document.createElement('div');
+  actions.className = 'equation-actions';
 
+  if (!eqData.isFreehand || eqData.isFitted) {
     const copyLatexBtn = document.createElement('button');
     copyLatexBtn.type = 'button';
     copyLatexBtn.className = 'btn-copy-eq';
@@ -807,9 +913,22 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
 
     actions.appendChild(copyLatexBtn);
     actions.appendChild(copyTextBtn);
-    header.appendChild(actions);
   }
 
+  if (!isPreview) {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'btn-delete-eq';
+    deleteBtn.title = 'Delete expression';
+    deleteBtn.innerHTML = '&times;';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteShape(shape.id);
+    });
+    actions.appendChild(deleteBtn);
+  }
+
+  header.appendChild(actions);
   card.appendChild(header);
 
   // Content Box
@@ -1360,14 +1479,15 @@ function renderShapePropertiesUI(shape) {
             <label class="property-label">Candidate Family:</label>
             <div class="fit-candidates-container" style="margin-top: 0.25rem;">
               ${candidates.map((c, i) => {
-                const orientTag = c.orientation === 'x_of_y' ? ' [x=g(y)]' : '';
-                const errVal = c.geom_error !== undefined ? c.geom_error : c.rmse;
-                return `
+          const orientTag = c.orientation === 'x_of_y' ? ' [x=g(y)]' : '';
+          const errVal = c.geom_error !== undefined ? c.geom_error : c.rmse;
+          return `
                 <button type="button" class="fit-candidate-pill ${i === selectedIdx ? 'active' : ''}" data-cand-idx="${i}">
                   <span>${i === 0 ? '★ ' : ''}${c.family_name}${orientTag}</span>
                   <span class="fit-rmse-tag">Err: ${errVal.toFixed(3)}</span>
                 </button>
-              `;}).join('')}
+              `;
+        }).join('')}
             </div>
           </div>
         `;
@@ -2273,32 +2393,33 @@ function adjustLiveShapeGeometry(shape, canvasX, canvasY) {
     const dx = canvasX - centerCanvas.x;
     const dy = canvasY - centerCanvas.y;
     const distPx = Math.hypot(dx, dy);
+    const distGraph = canvasToGraphDist(distPx);
     const angle = Math.atan2(dy, dx);
 
     if (type === 'circle') {
-      shape.geometry.radius = Math.max(0.5, (distPx / displayWidth) * 20);
+      shape.geometry.radius = Math.max(0.5, distGraph);
       shape.geometry.center = { ...baseGeom.center };
     } else if (type === 'ellipse') {
       const baseRatio = (baseGeom.radiusY || 1) / (baseGeom.radiusX || 1);
-      const newRx = Math.max(0.5, (distPx / displayWidth) * 20);
+      const newRx = Math.max(0.5, distGraph);
       shape.geometry.radiusX = newRx;
       shape.geometry.radiusY = Math.max(0.5, newRx * baseRatio);
       shape.geometry.rotation = angle;
       shape.geometry.center = { ...baseGeom.center };
     } else if (type === 'rectangle' || type === 'square') {
       if (type === 'square') {
-        const side = Math.max(0.5, (distPx / displayWidth) * 20 * Math.SQRT2);
+        const side = Math.max(0.5, distGraph * Math.SQRT2);
         shape.geometry.width = side;
         shape.geometry.height = side;
         shape.geometry.rotation = baseGeom.rotation || 0;
       } else {
         if (baseGeom.rotation === 0) {
-          shape.geometry.width = Math.max(0.5, (Math.abs(dx) * 2 / displayWidth) * 20);
-          shape.geometry.height = Math.max(0.5, (Math.abs(dy) * 2 / displayHeight) * 20);
+          shape.geometry.width = Math.max(0.5, canvasToGraphDist(Math.abs(dx) * 2));
+          shape.geometry.height = Math.max(0.5, canvasToGraphDist(Math.abs(dy) * 2));
           shape.geometry.rotation = 0;
         } else {
           const baseRatio = (baseGeom.height || 1) / (baseGeom.width || 1);
-          const newW = Math.max(0.5, (distPx / displayWidth) * 20 * Math.SQRT2);
+          const newW = Math.max(0.5, distGraph * Math.SQRT2);
           shape.geometry.width = newW;
           shape.geometry.height = Math.max(0.5, newW * baseRatio);
           shape.geometry.rotation = angle;
@@ -2306,7 +2427,7 @@ function adjustLiveShapeGeometry(shape, canvasX, canvasY) {
       }
       shape.geometry.center = { ...baseGeom.center };
     } else if (type === 'polygon' || type === 'star') {
-      const newRadius = Math.max(0.5, (distPx / displayWidth) * 20);
+      const newRadius = Math.max(0.5, distGraph);
       if (type === 'polygon') {
         shape.geometry.radius = newRadius;
       } else {
@@ -2368,7 +2489,7 @@ function handlePointerUp(event) {
   if (canvas.hasPointerCapture(event.pointerId)) {
     try {
       canvas.releasePointerCapture(event.pointerId);
-    } catch (_) {}
+    } catch (_) { }
   }
   activePointerId = null;
 
@@ -2402,7 +2523,7 @@ function handlePointerCancel() {
   if (activePointerId !== null && canvas.hasPointerCapture(activePointerId)) {
     try {
       canvas.releasePointerCapture(activePointerId);
-    } catch (_) {}
+    } catch (_) { }
   }
   activePointerId = null;
 
@@ -2487,23 +2608,61 @@ function handleEditPointerMove(canvasX, canvasY) {
 
 function findHitHandle(shape, canvasX, canvasY) {
   const { type, geometry } = shape;
-  const threshold = 12;
+  const threshold = 12; // 12 CSS px hit tolerance
+
+  if (type === 'line') {
+    const p1 = graphToCanvas(geometry.p1.x, geometry.p1.y, displayWidth, displayHeight);
+    const p2 = graphToCanvas(geometry.p2.x, geometry.p2.y, displayWidth, displayHeight);
+    if (Math.hypot(canvasX - p1.x, canvasY - p1.y) <= threshold) return 'center';
+    if (Math.hypot(canvasX - p2.x, canvasY - p2.y) <= threshold) return 'scale';
+    return null;
+  }
+
+  if (type === 'triangle' && geometry.center && geometry.vertices) {
+    const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
+    if (Math.hypot(canvasX - c.x, canvasY - c.y) <= threshold) return 'center';
+    if (geometry.vertices.length > 0) {
+      const v0 = graphToCanvas(geometry.vertices[0].x, geometry.vertices[0].y, displayWidth, displayHeight);
+      if (Math.hypot(canvasX - v0.x, canvasY - v0.y) <= threshold) return 'scale';
+    }
+    return null;
+  }
 
   if (geometry.center) {
     const c = graphToCanvas(geometry.center.x, geometry.center.y, displayWidth, displayHeight);
     if (Math.hypot(canvasX - c.x, canvasY - c.y) <= threshold) {
       return 'center';
     }
-  }
 
-  if (type === 'triangle' && geometry.vertices && geometry.vertices.length > 0) {
-    const v0 = graphToCanvas(geometry.vertices[0].x, geometry.vertices[0].y, displayWidth, displayHeight);
-    if (Math.hypot(canvasX - v0.x, canvasY - v0.y) <= threshold) {
+    let handlePos = null;
+    if (type === 'circle') {
+      const r = graphToCanvasDist(geometry.radius);
+      handlePos = { x: c.x + r, y: c.y };
+    } else if (type === 'ellipse') {
+      const rx = graphToCanvasDist(geometry.radiusX);
+      const rot = geometry.rotation || 0;
+      handlePos = { x: c.x + rx * Math.cos(rot), y: c.y + rx * Math.sin(rot) };
+    } else if (type === 'rectangle' || type === 'square') {
+      const w = graphToCanvasDist(geometry.width);
+      const h = graphToCanvasDist(geometry.height);
+      const rot = geometry.rotation || 0;
+      const cornerX = w / 2, cornerY = h / 2;
+      handlePos = {
+        x: c.x + (cornerX * Math.cos(rot) - cornerY * Math.sin(rot)),
+        y: c.y + (cornerX * Math.sin(rot) + cornerY * Math.cos(rot))
+      };
+    } else if (type === 'polygon' || type === 'star') {
+      const r = graphToCanvasDist(geometry.radius || geometry.outerRadius);
+      const rot = geometry.rotation || 0;
+      handlePos = { x: c.x + r * Math.cos(rot), y: c.y + r * Math.sin(rot) };
+    }
+
+    if (handlePos && Math.hypot(canvasX - handlePos.x, canvasY - handlePos.y) <= threshold) {
       return 'scale';
     }
   }
 
-  return 'scale';
+  return null;
 }
 
 function sign(p1, p2, p3) {
@@ -2528,14 +2687,14 @@ function findHitShape(canvasX, canvasY) {
       const v1 = graphToCanvas(s.geometry.vertices[1].x, s.geometry.vertices[1].y, displayWidth, displayHeight);
       const v2 = graphToCanvas(s.geometry.vertices[2].x, s.geometry.vertices[2].y, displayWidth, displayHeight);
       if (isPointInTriangle({ x: canvasX, y: canvasY }, v0, v1, v2) ||
-          distToSegment({ x: canvasX, y: canvasY }, v0, v1) <= threshold ||
-          distToSegment({ x: canvasX, y: canvasY }, v1, v2) <= threshold ||
-          distToSegment({ x: canvasX, y: canvasY }, v2, v0) <= threshold) {
+        distToSegment({ x: canvasX, y: canvasY }, v0, v1) <= threshold ||
+        distToSegment({ x: canvasX, y: canvasY }, v1, v2) <= threshold ||
+        distToSegment({ x: canvasX, y: canvasY }, v2, v0) <= threshold) {
         return s;
       }
     } else if (s.geometry.center) {
       const c = graphToCanvas(s.geometry.center.x, s.geometry.center.y, displayWidth, displayHeight);
-      const r = ((s.geometry.radius || s.geometry.outerRadius || s.geometry.width || 2) / 20) * displayWidth;
+      const r = graphToCanvasDist(s.geometry.radius || s.geometry.outerRadius || s.geometry.width || 2);
       if (Math.hypot(canvasX - c.x, canvasY - c.y) <= r + threshold) {
         return s;
       }
@@ -2589,7 +2748,7 @@ function handleClear() {
   if (activePointerId !== null && canvas.hasPointerCapture(activePointerId)) {
     try {
       canvas.releasePointerCapture(activePointerId);
-    } catch (_) {}
+    } catch (_) { }
   }
   activePointerId = null;
 
@@ -2734,6 +2893,147 @@ function handleRunReplay() {
     alert('Error parsing JSON: ' + err.message);
   }
 }
+
+function deleteShape(shapeId) {
+  shapes = shapes.filter(s => s.id !== shapeId);
+  if (selectedShapeId === shapeId) {
+    selectedShapeId = null;
+    renderShapePropertiesUI(null);
+  }
+  updateStrokeCountUI();
+  updateEquationsUI();
+  render();
+}
+
+// Zoom & Viewport Controls
+const zoomInBtn = document.getElementById('zoom-in-btn');
+const zoomOutBtn = document.getElementById('zoom-out-btn');
+const zoomResetBtn = document.getElementById('zoom-reset-btn');
+
+function handleZoomIn() {
+  if (appState === 'adjustingShape' || appState === 'transformingShape') {
+    cancelHoldTimer();
+    appState = 'idle';
+    activeHandle = null;
+    handleDragStart = null;
+  }
+  zoomScale = Math.min(10.0, zoomScale * 1.25);
+  resizeCanvas();
+}
+
+function handleZoomOut() {
+  if (appState === 'adjustingShape' || appState === 'transformingShape') {
+    cancelHoldTimer();
+    appState = 'idle';
+    activeHandle = null;
+    handleDragStart = null;
+  }
+  zoomScale = Math.max(0.2, zoomScale / 1.25);
+  resizeCanvas();
+}
+
+function handleZoomReset() {
+  if (appState === 'adjustingShape' || appState === 'transformingShape') {
+    cancelHoldTimer();
+    appState = 'idle';
+    activeHandle = null;
+    handleDragStart = null;
+  }
+  zoomScale = 1.0;
+  resizeCanvas();
+}
+
+if (zoomInBtn) zoomInBtn.addEventListener('click', handleZoomIn);
+if (zoomOutBtn) zoomOutBtn.addEventListener('click', handleZoomOut);
+if (zoomResetBtn) zoomResetBtn.addEventListener('click', handleZoomReset);
+
+// Sidebar Collapse & Expand
+const sidebar = document.getElementById('sidebar');
+const sidebarCollapseBtn = document.getElementById('sidebar-collapse-btn');
+const sidebarExpandBtn = document.getElementById('sidebar-expand-btn');
+
+if (sidebarCollapseBtn && sidebar) {
+  sidebarCollapseBtn.addEventListener('click', () => {
+    sidebar.classList.add('collapsed');
+    if (sidebarExpandBtn) sidebarExpandBtn.classList.remove('hidden');
+    resizeCanvas();
+  });
+}
+
+if (sidebarExpandBtn && sidebar) {
+  sidebarExpandBtn.addEventListener('click', () => {
+    sidebar.classList.remove('collapsed');
+    sidebarExpandBtn.classList.add('hidden');
+    resizeCanvas();
+  });
+}
+
+// Sidebar Resizer Dragging
+const sidebarResizer = document.getElementById('sidebar-resizer');
+if (sidebarResizer && sidebar) {
+  let isResizingSidebar = false;
+  let startX = 0;
+  let startWidth = 360;
+
+  sidebarResizer.addEventListener('pointerdown', (e) => {
+    isResizingSidebar = true;
+    startX = e.clientX;
+    startWidth = sidebar.getBoundingClientRect().width;
+    sidebarResizer.setPointerCapture(e.pointerId);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  sidebarResizer.addEventListener('pointermove', (e) => {
+    if (!isResizingSidebar) return;
+    const dx = e.clientX - startX;
+    const newWidth = Math.max(260, Math.min(650, startWidth + dx));
+    sidebar.style.width = `${newWidth}px`;
+    resizeCanvas();
+  });
+
+  const stopResizing = (e) => {
+    if (isResizingSidebar) {
+      isResizingSidebar = false;
+      try { sidebarResizer.releasePointerCapture(e.pointerId); } catch (_) { }
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      resizeCanvas();
+    }
+  };
+
+  sidebarResizer.addEventListener('pointerup', stopResizing);
+  sidebarResizer.addEventListener('pointercancel', stopResizing);
+}
+
+// Mobile Tab Switcher
+const mobileTabGraph = document.getElementById('mobile-tab-graph');
+const mobileTabSidebar = document.getElementById('mobile-tab-sidebar');
+
+if (mobileTabGraph && mobileTabSidebar && sidebar) {
+  mobileTabGraph.addEventListener('click', () => {
+    mobileTabGraph.classList.add('active');
+    mobileTabSidebar.classList.remove('active');
+    sidebar.classList.remove('mobile-active');
+    resizeCanvas();
+  });
+
+  mobileTabSidebar.addEventListener('click', () => {
+    mobileTabSidebar.classList.add('active');
+    mobileTabGraph.classList.remove('active');
+    sidebar.classList.add('mobile-active');
+  });
+}
+
+// Keyboard shortcuts (Delete selected shape in Edit mode)
+window.addEventListener('keydown', (e) => {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShapeId !== null) {
+    const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+    if (activeTag !== 'input' && activeTag !== 'textarea' && activeTag !== 'select') {
+      deleteShape(selectedShapeId);
+    }
+  }
+});
 
 // Button Listeners
 modeDrawBtn.addEventListener('click', () => setToolMode('draw'));
