@@ -65,8 +65,16 @@ let displayWidth = 0;
 let displayHeight = 0;
 let shapeIdCounter = 1;
 
-const BACKEND_FIT_URL = (window.SOMSED_CONFIG && window.SOMSED_CONFIG.BACKEND_URL) || 'https://somsed-backend.onrender.com/fit';
-const BACKEND_HEALTH_URL = (window.SOMSED_CONFIG && window.SOMSED_CONFIG.HEALTH_URL) || BACKEND_FIT_URL.replace(/\/fit\/?$/, '/health');
+const DIRECT_FIT_URL = (window.SOMSED_CONFIG && window.SOMSED_CONFIG.DIRECT_BACKEND_URL) || 'https://somsed-backend.onrender.com/fit';
+const PROXY_FIT_URL = '/api/fit';
+const isRenderStaticSite = (typeof window !== 'undefined' && window.location && window.location.hostname === 'somsed.onrender.com');
+
+const DEFAULT_FIT_URL = (window.SOMSED_CONFIG && window.SOMSED_CONFIG.BACKEND_URL)
+  ? window.SOMSED_CONFIG.BACKEND_URL
+  : (isRenderStaticSite ? PROXY_FIT_URL : DIRECT_FIT_URL);
+
+let activeFitUrl = DEFAULT_FIT_URL;
+let activeHealthUrl = (window.SOMSED_CONFIG && window.SOMSED_CONFIG.HEALTH_URL) || DEFAULT_FIT_URL.replace(/\/fit\/?$/, '/health');
 let currentFitRequestId = 0;
 
 const BACKEND_CONFIG = {
@@ -80,18 +88,54 @@ let backendState = 'unknown';
 let activeWakePromise = null;
 let wakeStartTime = 0;
 
+function getEndpointCandidates() {
+  const list = [];
+  const primaryHealth = activeHealthUrl;
+  const primaryFit = activeFitUrl;
+  list.push({ healthUrl: primaryHealth, fitUrl: primaryFit });
+
+  if (isRenderStaticSite) {
+    if (primaryFit !== PROXY_FIT_URL) {
+      list.push({ healthUrl: '/api/health', fitUrl: '/api/fit' });
+    }
+    if (primaryFit !== DIRECT_FIT_URL) {
+      list.push({ healthUrl: DIRECT_FIT_URL.replace(/\/fit\/?$/, '/health'), fitUrl: DIRECT_FIT_URL });
+    }
+  }
+  return list;
+}
+
+async function probeHealthWithFallback(signal) {
+  const candidates = getEndpointCandidates();
+  let lastErr = null;
+
+  for (const candidate of candidates) {
+    try {
+      const res = await fetch(candidate.healthUrl, { method: 'GET', signal });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.status === 'ok' || res.status === 200) {
+          activeHealthUrl = candidate.healthUrl;
+          activeFitUrl = candidate.fitUrl;
+          return { ok: true, data };
+        }
+      }
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  return { ok: false, error: lastErr };
+}
+
 async function checkBackendHealthBackground() {
   if (backendState === 'ready' || activeWakePromise) return;
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), BACKEND_CONFIG.healthTimeoutMs);
-    const res = await fetch(BACKEND_HEALTH_URL, { method: 'GET', signal: controller.signal });
+    const probe = await probeHealthWithFallback(controller.signal);
     clearTimeout(timeoutId);
-    if (res.ok) {
-      const data = await res.json().catch(() => ({}));
-      if (data.status === 'ok' || res.status === 200) {
-        backendState = 'ready';
-      }
+    if (probe.ok) {
+      backendState = 'ready';
     }
   } catch (_) { }
 }
@@ -112,15 +156,12 @@ function ensureBackendReady() {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), BACKEND_CONFIG.healthTimeoutMs);
-        const res = await fetch(BACKEND_HEALTH_URL, { method: 'GET', signal: controller.signal });
+        const probe = await probeHealthWithFallback(controller.signal);
         clearTimeout(timeoutId);
-        if (res.ok) {
-          const data = await res.json().catch(() => ({}));
-          if (data.status === 'ok' || res.status === 200) {
-            backendState = 'ready';
-            activeWakePromise = null;
-            return true;
-          }
+        if (probe.ok) {
+          backendState = 'ready';
+          activeWakePromise = null;
+          return true;
         }
       } catch (_) { }
 
@@ -1449,14 +1490,33 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
       stroke_id: shape.id
     };
 
-    const response = await fetch(BACKEND_FIT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
+    let response;
+    try {
+      response = await fetch(activeFitUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+    } catch (fetchErr) {
+      const isNetworkError = (fetchErr.name === 'TypeError' || (fetchErr.message && (fetchErr.message.includes('Failed to fetch') || fetchErr.message.includes('NetworkError'))));
+      if (isNetworkError && isRenderStaticSite && activeFitUrl !== PROXY_FIT_URL) {
+        activeFitUrl = PROXY_FIT_URL;
+        activeHealthUrl = '/api/health';
+        response = await fetch(activeFitUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+      } else {
+        throw fetchErr;
+      }
+    }
 
     clearTimeout(timeoutId);
 
