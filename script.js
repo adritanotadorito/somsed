@@ -65,8 +65,80 @@ let displayWidth = 0;
 let displayHeight = 0;
 let shapeIdCounter = 1;
 
-const BACKEND_FIT_URL = (window.SOMSED_CONFIG && window.SOMSED_CONFIG.BACKEND_URL) || 'http://127.0.0.1:8001/fit';
+const BACKEND_FIT_URL = (window.SOMSED_CONFIG && window.SOMSED_CONFIG.BACKEND_URL) || 'https://somsed-backend.onrender.com/fit';
+const BACKEND_HEALTH_URL = (window.SOMSED_CONFIG && window.SOMSED_CONFIG.HEALTH_URL) || BACKEND_FIT_URL.replace(/\/fit\/?$/, '/health');
 let currentFitRequestId = 0;
+
+const BACKEND_CONFIG = {
+  healthTimeoutMs: 8000,
+  fitTimeoutMs: 25000,
+  wakePeriodMaxMs: 120000,
+  retryDelayMs: 2500
+};
+
+let backendState = 'unknown';
+let activeWakePromise = null;
+let wakeStartTime = 0;
+
+async function checkBackendHealthBackground() {
+  if (backendState === 'ready' || activeWakePromise) return;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), BACKEND_CONFIG.healthTimeoutMs);
+    const res = await fetch(BACKEND_HEALTH_URL, { method: 'GET', signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (data.status === 'ok' || res.status === 200) {
+        backendState = 'ready';
+      }
+    }
+  } catch (_) { }
+}
+
+function ensureBackendReady() {
+  if (backendState === 'ready') {
+    return Promise.resolve(true);
+  }
+  if (activeWakePromise) {
+    return activeWakePromise;
+  }
+
+  wakeStartTime = Date.now();
+  backendState = 'waking';
+
+  activeWakePromise = (async () => {
+    while (Date.now() - wakeStartTime < BACKEND_CONFIG.wakePeriodMaxMs) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), BACKEND_CONFIG.healthTimeoutMs);
+        const res = await fetch(BACKEND_HEALTH_URL, { method: 'GET', signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (data.status === 'ok' || res.status === 200) {
+            backendState = 'ready';
+            activeWakePromise = null;
+            return true;
+          }
+        }
+      } catch (_) { }
+
+      const elapsed = Date.now() - wakeStartTime;
+      if (elapsed >= BACKEND_CONFIG.wakePeriodMaxMs) {
+        break;
+      }
+      const waitTime = Math.min(BACKEND_CONFIG.retryDelayMs, BACKEND_CONFIG.wakePeriodMaxMs - elapsed);
+      await new Promise(r => setTimeout(r, waitTime));
+    }
+
+    backendState = 'unreachable';
+    activeWakePromise = null;
+    return false;
+  })();
+
+  return activeWakePromise;
+}
 
 function trackAnalyticsEvent(eventName, properties = {}) {
   try {
@@ -812,7 +884,7 @@ function createFamilySelect(shape) {
       }
     }
 
-    if (shape.showFit !== false && shape.fitStatus !== 'loading') {
+    if (shape.showFit !== false && shape.fitStatus !== 'loading' && shape.fitStatus !== 'waking') {
       fitFreehandStroke(shape, chosenFamily || null);
     } else {
       updateEquationsUI();
@@ -940,12 +1012,20 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
   card.appendChild(header);
 
   if (eqData.isFreehand) {
-    if (shape.fitStatus === 'loading') {
+    if (shape.fitStatus === 'waking') {
+      const wakingBox = document.createElement('div');
+      wakingBox.className = 'fit-loading-box';
+      wakingBox.innerHTML = `
+        <div class="fit-spinner"></div>
+        <span>Starting the equation service. This may take about a minute.</span>
+      `;
+      card.appendChild(wakingBox);
+    } else if (shape.fitStatus === 'loading') {
       const loadingBox = document.createElement('div');
       loadingBox.className = 'fit-loading-box';
       loadingBox.innerHTML = `
         <div class="fit-spinner"></div>
-        <span>Fitting curve equation...</span>
+        <span>Finding an equation…</span>
       `;
       card.appendChild(loadingBox);
     } else if (shape.fitStatus === 'error') {
@@ -956,14 +1036,14 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
       errBox.style.color = '#b91c1c';
       errBox.innerHTML = `
         <div style="font-weight: 600; margin-bottom: 0.25rem;">Fitting Service Notice</div>
-        <div style="font-size: 0.75rem; line-height: 1.4;">${shape.fitError || 'Cannot connect to Python backend at http://127.0.0.1:8001.'}</div>
+        <div style="font-size: 0.75rem; line-height: 1.4;">${shape.fitError || 'The equation service is taking longer than expected. Try again.'}</div>
       `;
       const retryBtn = document.createElement('button');
       retryBtn.type = 'button';
       retryBtn.className = 'btn-fit';
       retryBtn.style.marginTop = '0.4rem';
       retryBtn.style.padding = '0.25rem 0.6rem';
-      retryBtn.textContent = 'Retry Connection';
+      retryBtn.textContent = 'Retry';
       retryBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         fitFreehandStroke(shape);
@@ -1117,11 +1197,11 @@ function createEquationCard(shape, eqData, isSelected, isPreview) {
         shape.showOverlay = nextState;
         if (!nextState) {
           currentFitRequestId++;
-          if (shape.fitStatus === 'loading') {
+          if (shape.fitStatus === 'loading' || shape.fitStatus === 'waking') {
             shape.fitStatus = (shape.fitData && shape.fitData.success) ? 'success' : null;
           }
         } else if (!shape.fitData || !shape.fitData.success) {
-          if (shape.fitStatus !== 'loading') {
+          if (shape.fitStatus !== 'loading' && shape.fitStatus !== 'waking') {
             fitFreehandStroke(shape, shape.requestedFamily || null);
             return;
           }
@@ -1327,9 +1407,32 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
 
   const thisRequestId = ++currentFitRequestId;
   shape.fitRequestId = thisRequestId;
-  shape.fitStatus = 'loading';
   shape.fitError = null;
 
+  if (backendState !== 'ready') {
+    shape.fitStatus = 'waking';
+    updateEquationsUI();
+    refreshPropertiesInputsIfSelected(shape.id);
+    render();
+
+    const isReady = await ensureBackendReady();
+
+    if (shape.fitRequestId !== thisRequestId || !shapes.includes(shape) || shape.showFit === false) {
+      return;
+    }
+
+    if (!isReady) {
+      shape.fitStatus = 'error';
+      shape.fitError = 'The equation service is taking longer than expected. Try again.';
+      trackAnalyticsEvent('fit_failed', { error_category: 'cold_start_timeout' });
+      updateEquationsUI();
+      refreshPropertiesInputsIfSelected(shape.id);
+      render();
+      return;
+    }
+  }
+
+  shape.fitStatus = 'loading';
   updateEquationsUI();
   refreshPropertiesInputsIfSelected(shape.id);
   render();
@@ -1337,7 +1440,7 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort();
-  }, 6000);
+  }, BACKEND_CONFIG.fitTimeoutMs);
 
   try {
     const payload = {
@@ -1364,8 +1467,7 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
 
     const data = await response.json();
 
-    if (shape.fitRequestId !== thisRequestId || !shapes.includes(shape)) {
-      console.log('Discarding stale fit response for request', thisRequestId);
+    if (shape.fitRequestId !== thisRequestId || !shapes.includes(shape) || shape.showFit === false) {
       return;
     }
 
@@ -1388,17 +1490,36 @@ async function fitFreehandStroke(shape, requestedFamily = null) {
     }
   } catch (err) {
     clearTimeout(timeoutId);
-    if (shape.fitRequestId !== thisRequestId || !shapes.includes(shape)) {
+    if (shape.fitRequestId !== thisRequestId || !shapes.includes(shape) || shape.showFit === false) {
       return;
     }
-    console.error('Fit curve error:', err);
+
+    const isNetworkError = (err.name === 'TypeError' || (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))));
+
+    if (isNetworkError && backendState === 'ready') {
+      backendState = 'unknown';
+      shape.fitStatus = 'waking';
+      updateEquationsUI();
+      refreshPropertiesInputsIfSelected(shape.id);
+      render();
+
+      const isReady = await ensureBackendReady();
+      if (shape.fitRequestId !== thisRequestId || !shapes.includes(shape) || shape.showFit === false) {
+        return;
+      }
+
+      if (isReady) {
+        return fitFreehandStroke(shape, shape.requestedFamily || null);
+      }
+    }
+
     shape.fitStatus = 'error';
     let errorCategory = 'server_error';
     if (err.name === 'AbortError') {
-      shape.fitError = 'Fitting request timed out after 6 seconds. The backend may be busy or offline.';
+      shape.fitError = 'Fitting request timed out. The backend may be busy or offline.';
       errorCategory = 'timeout';
-    } else if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))) {
-      shape.fitError = `Cannot connect to Python FastAPI backend at ${BACKEND_FIT_URL}. Please make sure the backend is running.`;
+    } else if (isNetworkError) {
+      shape.fitError = 'The equation service is taking longer than expected. Try again.';
       errorCategory = 'network_error';
     } else {
       shape.fitError = err.message || 'An error occurred during equation fitting.';
@@ -2051,11 +2172,11 @@ function renderShapePropertiesUI(shape) {
           <span>Points: <strong>${strokePts.length}</strong></span>
         </div>
         <div style="font-size: 0.75rem; color: #64748b; margin: 0.5rem 0;">
-          ${shape.fitStatus === 'loading' ? 'Fitting equation via backend...' : 'Click "Fit Equation" to approximate this stroke with mathematical models (Linear, Quadratic, Cubic, Absolute Value, Sine).'}
+          ${shape.fitStatus === 'waking' ? 'Starting the equation service. This may take about a minute.' : shape.fitStatus === 'loading' ? 'Finding an equation…' : 'Click "Fit Equation" to approximate this stroke with mathematical models (Linear, Quadratic, Cubic, Absolute Value, Sine).'}
         </div>
         <div class="properties-actions">
-          <button type="button" id="prop-fit-btn" class="btn btn-primary" ${shape.fitStatus === 'loading' ? 'disabled' : ''}>
-            ${shape.fitStatus === 'loading' ? 'Fitting...' : 'Fit Equation'}
+          <button type="button" id="prop-fit-btn" class="btn btn-primary" ${(shape.fitStatus === 'loading' || shape.fitStatus === 'waking') ? 'disabled' : ''}>
+            ${shape.fitStatus === 'waking' ? 'Starting...' : shape.fitStatus === 'loading' ? 'Finding...' : 'Fit Equation'}
           </button>
         </div>
       </div>
@@ -2935,6 +3056,9 @@ function handlePointerUp(event) {
       renderShapePropertiesUI(freehandShape);
       updateStatusUI('committed-freehand');
       trackAnalyticsEvent('drawing_completed', { stroke_type: 'freehand' });
+      if (freehandShape.showFit !== false) {
+        fitFreehandStroke(freehandShape);
+      }
     }
   } else if (toolMode === 'edit') {
     if (selectedShapeId) {
@@ -3494,6 +3618,7 @@ function handleRunReplay() {
 }
 
 function deleteShape(shapeId) {
+  currentFitRequestId++;
   shapes = shapes.filter(s => s.id !== shapeId);
   if (selectedShapeId === shapeId) {
     selectedShapeId = null;
@@ -3652,7 +3777,10 @@ resizeObserver.observe(canvas.parentElement);
 
 window.addEventListener('load', () => {
   updateEquationsUI();
+  checkBackendHealthBackground();
 });
+
+checkBackendHealthBackground();
 
 resizeCanvas();
 updateStatusUI('idle');
